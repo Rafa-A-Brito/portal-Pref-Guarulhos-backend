@@ -1,4 +1,3 @@
-````md
 # 🏛️ Patrimônio Histórico de Guarulhos — Portal Cultural & Mapeamento
 
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat&logo=react&logoColor=white)
@@ -98,7 +97,7 @@ Ao reunir esse conteúdo em uma plataforma digital única, o projeto contribui p
 │                       Database                          │
 │                    PostgreSQL + Prisma                  │
 └─────────────────────────────────────────────────────────┘
-````
+```
 
 ---
 
@@ -198,7 +197,6 @@ patrimonio-guarulhos/
 └── README.md
 ```
 
-````markdown
 ### ⚙️ Backend
 
 ```text
@@ -211,21 +209,19 @@ src/
 ├── utils/        # Auxiliares genéricos do servidor
 ├── app.js        # Configuração dos middlewares do Express
 └── server.js     # Inicialização do servidor HTTP
-````
+```
 
-| Diretório / Pasta  | Responsabilidade Principal                                                                                           | Exemplos de Arquivos                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `src/config/`      | Gerencia e centraliza as conexões com bancos de dados, chaves de API e a validação de variáveis de ambiente.         | `database.js`, `env.js`                            |
+| Diretório / Pasta | Responsabilidade Principal | Exemplos de Arquivos |
+|---|---|---|
+| `src/config/` | Gerencia e centraliza as conexões com bancos de dados, chaves de API e a validação de variáveis de ambiente. | `database.js`, `env.js` |
 | `src/controllers/` | Entrada HTTP: extrai parâmetros (`req.body`/`req.params`), aciona a camada de serviço e retorna JSON (`res.json()`). | `patrimonioController.js`, `sugestaoController.js` |
-| `src/services/`    | Concentra todas as regras de negócio da aplicação, validações de domínio e orquestração de persistência.             | `patrimonioService.js`, `sugestaoService.js`       |
-| `src/middlewares/` | Intercepta requisições HTTP para checagens de segurança, validação, uploads e tratamento de erros.                   | `uploadMiddleware.js`, `errorMiddleware.js`        |
-| `src/routes/`      | Mapeia os endpoints REST e conecta as rotas HTTP aos respectivos métodos dos controllers.                            | `patrimonioRoutes.js`, `sugestaoRoutes.js`         |
-| `src/utils/`       | Reúne funções auxiliares reutilizáveis no servidor.                                                                  | `emailHelper.js`, `logger.js`                      |
-| `prisma/`          | Contém o schema e as migrations responsáveis pela estrutura do banco de dados.                                       | `schema.prisma`, `migrations/`                     |
+| `src/services/` | Concentra todas as regras de negócio da aplicação, validações de domínio e orquestração de persistência. | `patrimonioService.js`, `sugestaoService.js` |
+| `src/middlewares/` | Intercepta requisições HTTP para checagens de segurança, validação, uploads e tratamento de erros. | `uploadMiddleware.js`, `errorMiddleware.js` |
+| `src/routes/` | Mapeia os endpoints REST e conecta as rotas HTTP aos respectivos métodos dos controllers. | `patrimonioRoutes.js`, `sugestaoRoutes.js` |
+| `src/utils/` | Reúne funções auxiliares reutilizáveis no servidor. | `emailHelper.js`, `logger.js` |
+| `prisma/` | Contém o schema e as migrations responsáveis pela estrutura do banco de dados. | `schema.prisma`, `migrations/` |
 
-```
-```
-
+---
 
 ## 🗺️ Roadmap
 
@@ -274,6 +270,3 @@ Este projeto está sob a licença MIT. Consulte o arquivo `LICENSE` para mais de
 ## 👥 Autores
 
 Desenvolvido como parte de um projeto acadêmico voltado à valorização do patrimônio histórico e cultural de Guarulhos.
-
-```
-```
