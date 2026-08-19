@@ -1,0 +1,30 @@
+{
+  "name": "portal-pref-guarulhos-backend",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/Rafa-A-Brito/portal-Pref-Guarulhos-backend#readme",
+  "bugs": {
+    "url": "https://github.com/Rafa-A-Brito/portal-Pref-Guarulhos-backend/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rafa-A-Brito/portal-Pref-Guarulhos-backend.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
