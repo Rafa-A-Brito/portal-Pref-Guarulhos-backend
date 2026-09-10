@@ -5,6 +5,8 @@ const result = z.object({
     PORT: z.coerce.number().int().min(1).max(65535).default(3333),
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     CORS_ORIGIN: z.url().default("http://localhost:5173"),
+    JWT_SECRET: z.string().min(32),
+    JWT_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(900),
 }).safeParse(process.env);
 
 if (!result.success) {
