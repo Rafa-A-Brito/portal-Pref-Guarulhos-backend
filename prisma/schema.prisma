@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EDITOR
+  ADMIN
+}
+
+enum SituacaoPatrimonio {
+  PRESERVADO
+  EM_RESTAURACAO
+  NECESSITA_RESTAURACAO
+  EM_RUINAS
+  NAO_INFORMADO
+}
+
+enum StatusPublicacao {
+  RASCUNHO
+  PUBLICADO
+  ARQUIVADO
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @db.VarChar(100)
+  email        String   @unique @db.VarChar(254)
+  passwordHash String
+  role         Role     @default(EDITOR)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  patrimoniosCriados     Patrimonio[] @relation("PatrimonioCriadoPor")
+  patrimoniosAtualizados Patrimonio[] @relation("PatrimonioAtualizadoPor")
+}
+
+model Categoria {
+  id          String       @id @default(uuid()) @db.Uuid
+  nome        String       @unique @db.VarChar(100)
+  descricao   String?      @db.Text
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  patrimonios Patrimonio[]
+}
+
+model Patrimonio {
+  id          String             @id @default(uuid()) @db.Uuid
+  nome        String             @db.VarChar(200)
+  slug        String             @unique @db.VarChar(220)
+  descricao   String             @db.Text
+  historia    String?            @db.Text
+  situacao    SituacaoPatrimonio @default(NAO_INFORMADO)
+  status      StatusPublicacao   @default(RASCUNHO)
+  categoriaId String             @db.Uuid
+  createdBy   String             @db.Uuid
+  updatedBy   String?            @db.Uuid
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  publicadoEm DateTime?
+  arquivadoEm DateTime?
+
+  categoria     Categoria             @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  criadoPor     User                  @relation("PatrimonioCriadoPor", fields: [createdBy], references: [id], onDelete: Restrict)
+  atualizadoPor User?                 @relation("PatrimonioAtualizadoPor", fields: [updatedBy], references: [id], onDelete: Restrict)
+  localizacao   Localizacao?
+  imagens       PatrimonioImagem[]
+  documentos    PatrimonioDocumento[]
+  rotas         RotaPatrimonio[]
+
+  @@index([categoriaId, status])
+  @@index([createdBy])
+  @@index([updatedBy])
+  @@index([status])
+}
+
+model Localizacao {
+  id           String     @id @default(uuid()) @db.Uuid
+  patrimonioId String     @unique @db.Uuid
+  endereco     String     @db.VarChar(250)
+  numero       String?    @db.VarChar(30)
+  complemento  String?    @db.VarChar(150)
+  bairro       String     @db.VarChar(100)
+  cidade       String     @default("Guarulhos") @db.VarChar(100)
+  uf           String     @default("SP") @db.Char(2)
+  cep          String?    @db.VarChar(9)
+  latitude     Decimal?   @db.Decimal(10, 7)
+  longitude    Decimal?   @db.Decimal(10, 7)
+  patrimonio   Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Restrict)
+}
+
+model PatrimonioImagem {
+  id               String     @id @default(uuid()) @db.Uuid
+  patrimonioId     String     @db.Uuid
+  url              String
+  titulo           String?    @db.VarChar(200)
+  textoAlternativo String     @db.VarChar(300)
+  ordem            Int        @default(0)
+  principal        Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  patrimonio       Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Restrict)
+
+  @@index([patrimonioId, ordem])
+}
+
+model PatrimonioDocumento {
+  id           String     @id @default(uuid()) @db.Uuid
+  patrimonioId String     @db.Uuid
+  titulo       String     @db.VarChar(200)
+  descricao    String?    @db.Text
+  url          String
+  mimeType     String?    @db.VarChar(100)
+  createdAt    DateTime   @default(now())
+  patrimonio   Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Restrict)
+
+  @@index([patrimonioId])
+}
+
+model Rota {
+  id          String           @id @default(uuid()) @db.Uuid
+  nome        String           @db.VarChar(200)
+  slug        String           @unique @db.VarChar(220)
+  descricao   String?          @db.Text
+  status      StatusPublicacao @default(RASCUNHO)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  patrimonios RotaPatrimonio[]
+
+  @@index([status])
+}
+
+model RotaPatrimonio {
+  rotaId       String     @db.Uuid
+  patrimonioId String     @db.Uuid
+  ordem        Int
+  rota         Rota       @relation(fields: [rotaId], references: [id], onDelete: Cascade)
+  patrimonio   Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Restrict)
+
+  @@id([rotaId, patrimonioId])
+  @@unique([rotaId, ordem])
+  @@index([patrimonioId])
+}
