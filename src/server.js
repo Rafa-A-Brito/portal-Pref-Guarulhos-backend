@@ -1,8 +1,7 @@
 import "dotenv/config";
+import env from "./config/env.js";
 import app from "./app.js";
 
-const PORT = process.env.PORT || 3333;
-
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+app.listen(env.PORT, () => {
+    console.log(`Portal Cultural de Guarulhos: http://localhost:${env.PORT}/api`);
 });
