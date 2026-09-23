@@ -5,7 +5,7 @@ import { verifyToken } from "../utils/token.js";
 export default async function authenticate(req, _res, next) {
     const authorization = req.get("authorization");
     const match = authorization?.match(/^Bearer ([^\s]+)$/i);
-    if (!match) throw new UnauthorizedError("Informe Authorization: Bearer TOKEN.");
+    if (!match) throw new UnauthorizedError();
 
     const payload = verifyToken(match[1]);
     // A consulta fica fora do tratamento de erros do JWT.
