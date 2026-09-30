@@ -1,5 +1,6 @@
 import { Router } from "express";
 import authRoutes from "./authRoute.js";
+import adminRoutes from "./adminRoute.js";
 
 const router = Router();
 
@@ -15,5 +16,6 @@ router.get("/health", (_req, res) => {
 });
 
 router.use("/auth", authRoutes);
+router.use("/admins", adminRoutes);
 
 export default router;

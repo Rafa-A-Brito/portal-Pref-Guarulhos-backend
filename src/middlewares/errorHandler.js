@@ -30,9 +30,11 @@ export default function errorHandler(error, _req, res, next) {
         error = new BaseError();
     }
 
+    const codes = { 400: "BAD_REQUEST", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT" };
     res.status(error.statusCode).json({
         success: false,
         message: error.message,
         details: error.details,
+        error: { code: error.code ?? codes[error.statusCode] ?? "INTERNAL_ERROR", message: error.message },
     });
 }
