@@ -20,7 +20,10 @@
     "test": "node --test",
     "prisma:format": "prisma format",
     "prisma:validate": "prisma validate",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:status": "prisma migrate status"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
