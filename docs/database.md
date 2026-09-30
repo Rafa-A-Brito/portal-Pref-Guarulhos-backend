@@ -57,6 +57,7 @@ Não foi removido nenhum enum, campo ou relacionamento preexistente. Os campos `
 - História, importância cultural, metadados de fonte, data do documento, coordenadas, complemento de endereço, atualização por usuário e snapshots de auditoria são opcionais porque podem ser desconhecidos ou inaplicáveis.
 - `descricao_resumida` é obrigatória por fazer parte do contrato de apresentação esperado pela interface. `tipo` do documento também é obrigatório para permitir classificação consistente.
 - Defaults principais: UUID automático; `EDITOR`; usuário ativo; `RASCUNHO`; `NAO_INFORMADO`; `is_capa = false`; `ordem = 0` para imagens; cidade `Guarulhos`; UF `SP`; timestamps de criação e atualização com o instante atual.
+- O enum de situação também inclui `DEMOLIDO`, permitindo manter na consulta pública bens perdidos como registros históricos sem classificá-los como situação desconhecida.
 
 `@updatedAt` é aplicado pelo Prisma Client. O default de `updated_at` também permite inserções SQL diretas coerentes, mas qualquer escrita fora do Prisma é responsável por atualizar o valor em alterações posteriores.
 
@@ -132,6 +133,8 @@ npm run prisma:status
 ```
 
 A migration inicial está em `prisma/migrations/20260929230000_initial_schema/migration.sql`. Como não havia credencial disponível para a instância instalada durante a geração, ela foi derivada do schema por `prisma migrate diff --from-empty --to-schema` e recebeu manualmente os checks e o índice parcial. Depois, foi aplicada com `prisma migrate deploy` em um cluster PostgreSQL 18 temporário e descartável; `prisma migrate status` confirmou que o schema estava atualizado.
+
+A migration incremental `20260930120000_add_demolido_situacao` adiciona o valor `DEMOLIDO` ao enum físico `situacao_patrimonio`.
 
 Os testes reproduzíveis estão em `prisma/tests/integrity.sql`. Eles executam dentro de uma transação e terminam com `ROLLBACK`, portanto não deixam os registros de teste no banco. Execute-os somente em uma instância de desenvolvimento com a migration já aplicada:
 

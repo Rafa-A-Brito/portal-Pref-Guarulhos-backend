@@ -6,6 +6,77 @@ import { slugify } from "../utils/slug.js";
 
 const MAX_SLUG_ATTEMPTS = 1000;
 
+const publicListSelect = {
+    id: true,
+    nome: true,
+    slug: true,
+    descricaoResumida: true,
+    situacao: true,
+    publicadoEm: true,
+    categoria: { select: { id: true, nome: true, slug: true } },
+    localizacao: true,
+    imagens: {
+        orderBy: [{ principal: "desc" }, { ordem: "asc" }],
+        take: 1,
+        select: {
+            id: true,
+            url: true,
+            titulo: true,
+            textoAlternativo: true,
+            principal: true,
+        },
+    },
+};
+
+const publicDetailSelect = {
+    id: true,
+    nome: true,
+    slug: true,
+    descricao: true,
+    descricaoResumida: true,
+    historia: true,
+    importanciaCultural: true,
+    situacao: true,
+    publicadoEm: true,
+    updatedAt: true,
+    categoria: { select: { id: true, nome: true, slug: true, descricao: true } },
+    localizacao: true,
+    imagens: {
+        orderBy: [{ principal: "desc" }, { ordem: "asc" }],
+        select: {
+            id: true,
+            url: true,
+            titulo: true,
+            textoAlternativo: true,
+            credito: true,
+            fonte: true,
+            ordem: true,
+            principal: true,
+        },
+    },
+    documentos: {
+        orderBy: { createdAt: "asc" },
+        select: {
+            id: true,
+            titulo: true,
+            descricao: true,
+            url: true,
+            tipo: true,
+            fonte: true,
+            dataDocumento: true,
+            mimeType: true,
+        },
+    },
+    rotas: {
+        where: { rota: { status: StatusPublicacao.PUBLICADO } },
+        orderBy: { ordem: "asc" },
+        select: {
+            ordem: true,
+            rota: { select: { id: true, nome: true, slug: true, descricao: true } },
+        },
+    },
+};
+
 async function generateUniqueSlug(client, nome) {
     const baseSlug = slugify(nome);
 
@@ -23,6 +94,64 @@ async function generateUniqueSlug(client, nome) {
     const error = new ConflictError("Não foi possível gerar um slug único para o patrimônio.");
     error.code = "PATRIMONIO_SLUG_CONFLICT";
     throw error;
+}
+
+export async function listPatrimonios({ busca, categoria, situacao, bairro, pagina, limite }) {
+    const where = {
+        status: StatusPublicacao.PUBLICADO,
+        ...(busca && {
+            OR: [
+                { nome: { contains: busca, mode: "insensitive" } },
+                { descricaoResumida: { contains: busca, mode: "insensitive" } },
+                { descricao: { contains: busca, mode: "insensitive" } },
+                { historia: { contains: busca, mode: "insensitive" } },
+                { importanciaCultural: { contains: busca, mode: "insensitive" } },
+            ],
+        }),
+        ...(categoria && {
+            categoria: { nome: { equals: categoria, mode: "insensitive" } },
+        }),
+        ...(situacao && { situacao }),
+        ...(bairro && {
+            localizacao: { is: { bairro: { equals: bairro, mode: "insensitive" } } },
+        }),
+    };
+
+    const [total, itens] = await Promise.all([
+        prisma.patrimonio.count({ where }),
+        prisma.patrimonio.findMany({
+            where,
+            skip: (pagina - 1) * limite,
+            take: limite,
+            orderBy: [{ nome: "asc" }, { id: "asc" }],
+            select: publicListSelect,
+        }),
+    ]);
+
+    return {
+        itens,
+        paginacao: {
+            pagina,
+            limite,
+            total,
+            totalPaginas: Math.ceil(total / limite),
+        },
+    };
+}
+
+export async function getPatrimonioBySlug(slug) {
+    const patrimonio = await prisma.patrimonio.findFirst({
+        where: { slug, status: StatusPublicacao.PUBLICADO },
+        select: publicDetailSelect,
+    });
+
+    if (!patrimonio) {
+        const error = new NotFoundError("Patrimônio não encontrado.");
+        error.code = "PATRIMONIO_NOT_FOUND";
+        throw error;
+    }
+
+    return patrimonio;
 }
 
 export async function createPatrimonio(data, createdBy) {
@@ -46,7 +175,9 @@ export async function createPatrimonio(data, createdBy) {
                     nome: data.nome,
                     slug,
                     descricao: data.descricao,
+                    descricaoResumida: data.descricaoResumida,
                     historia: data.historia,
+                    importanciaCultural: data.importanciaCultural,
                     situacao: data.situacao ?? SituacaoPatrimonio.NAO_INFORMADO,
                     status: StatusPublicacao.RASCUNHO,
                     categoriaId: data.categoriaId,

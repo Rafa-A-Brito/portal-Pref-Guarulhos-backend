@@ -18,6 +18,7 @@ enum SituacaoPatrimonio {
   EM_RESTAURACAO
   NECESSITA_RESTAURACAO
   EM_RUINAS
+  DEMOLIDO
   NAO_INFORMADO
 
   @@map("situacao_patrimonio")

@@ -134,6 +134,9 @@ Crie um arquivo `.env` no backend com base no `.env.example`:
 # backend/.env
 DATABASE_URL=postgresql://usuario:senha@localhost:5432/patrimonio_guarulhos
 PORT=3333
+CORS_ORIGIN=http://localhost:5173
+JWT_SECRET=um-segredo-aleatorio-com-pelo-menos-32-caracteres
+JWT_TTL_SECONDS=900
 ```
 
 ### Configuração do Prisma
@@ -148,6 +151,12 @@ Para criar/aplicar as migrations durante o desenvolvimento:
 
 ```bash
 npx prisma migrate dev
+```
+
+Para popular o ambiente local com os patrimônios iniciais:
+
+```bash
+npm run prisma:seed
 ```
 
 ### Executando em desenvolvimento
@@ -165,6 +174,22 @@ http://localhost:3333
 ```
 
 Para executar o frontend, utilize o procedimento definido no README do respectivo repositório.
+
+### Consulta pública de patrimônios
+
+```http
+GET /api/patrimonios
+GET /api/patrimonios/:slug
+```
+
+A listagem aceita os parâmetros opcionais `busca`, `categoria`, `situacao`,
+`bairro`, `pagina` e `limite`. Apenas patrimônios publicados são retornados.
+
+Exemplo:
+
+```http
+GET /api/patrimonios?busca=igreja&categoria=Religioso&bairro=Centro&pagina=1&limite=20
+```
 
 ---
 
