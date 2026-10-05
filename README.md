@@ -173,6 +173,14 @@ O backend estará disponível em:
 http://localhost:3333
 ```
 
+### Documentação interativa da API
+
+Com o backend em execução, abra [Swagger UI](http://localhost:3333/api/docs) no navegador. A especificação OpenAPI 3.0.3 também está disponível em `GET /api/docs.json`. Essas páginas não consultam o banco; as rotas que leem ou gravam dados continuam dependendo do PostgreSQL configurado.
+
+Para testar as rotas protegidas, faça `POST /api/auth/login` na própria interface com uma conta ativa. Copie o `data.token` da resposta, clique em **Authorize** e informe o token JWT. O Swagger UI enviará o cabeçalho `Authorization: Bearer <token>` somente nas operações protegidas; o token não é persistido no navegador por padrão. `POST /api/admins` exige ADMIN; `POST /api/admin/patrimonios` aceita ADMIN ou EDITOR. É necessário já existir uma conta ADMIN para cadastrar outras contas; não há cadastro público.
+
+Use **Try it out** para preencher os parâmetros e executar uma requisição. Consultas públicas como `GET /api/patrimonios?pagina=1&limite=20` não exigem autenticação. **Atenção:** Try it out nas operações POST executa ações reais no banco configurado. Confira a variável de ambiente do banco antes de criar administradores ou patrimônios.
+
 Para executar o frontend, utilize o procedimento definido no README do respectivo repositório.
 
 ### Consulta pública de patrimônios
