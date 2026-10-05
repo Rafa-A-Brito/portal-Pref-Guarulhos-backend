@@ -6,7 +6,7 @@ const openapi = {
     info: {
         title: "Portal Cultural de Guarulhos API",
         version: "1.0.0",
-        description: "Contrato da API atual. As operações POST em Try it out executam ações reais no banco configurado.",
+        description: "Contrato da API atual. As operações POST e PATCH em Try it out executam ações reais no banco configurado.",
     },
     servers: [{ url: "/" }],
     tags: [

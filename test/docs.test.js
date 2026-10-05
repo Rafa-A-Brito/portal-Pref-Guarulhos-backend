@@ -12,17 +12,21 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
         Object.keys(methods).map((method) => `${method.toUpperCase()} ${path}`));
     assert.deepEqual(operations.sort(), [
         "GET /api", "GET /api/health", "GET /api/docs", "GET /api/docs.json",
-        "POST /api/auth/login", "POST /api/admins", "GET /api/patrimonios",
+        "POST /api/auth/login", "PATCH /api/auth/senha", "POST /api/admins", "GET /api/patrimonios",
         "GET /api/patrimonios/{slug}", "POST /api/admin/patrimonios",
+        "GET /api/admin/patrimonios", "GET /api/admin/patrimonios/{id}",
+        "PATCH /api/admin/patrimonios/{id}", "PATCH /api/admin/patrimonios/{id}/publicar",
+        "PATCH /api/admin/patrimonios/{id}/arquivar",
     ].sort());
 
     for (const [path, methods] of Object.entries(openapi.paths)) {
         for (const operation of Object.values(methods)) {
-            assert.equal(Boolean(operation.security), ["/api/admins", "/api/admin/patrimonios"].includes(path));
+            assert.equal(Boolean(operation.security), path === "/api/admins" || path === "/api/auth/senha" || path.startsWith("/api/admin/patrimonios"));
         }
     }
     assert.equal(openapi.components.schemas.AdminRequest.properties.password.writeOnly, true);
     assert.equal(openapi.components.schemas.LoginRequest.properties.password.writeOnly, true);
+    assert.equal(openapi.components.schemas.ChangePasswordRequest.properties.novaSenha.writeOnly, true);
     assert.equal(JSON.stringify(openapi).includes("passwordHash"), false);
     assert.equal(openapi.components.schemas.PatrimonioResumo.properties.imagens.maxItems, 1);
 });

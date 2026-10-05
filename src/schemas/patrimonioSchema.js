@@ -1,9 +1,9 @@
-import { SituacaoPatrimonio } from "@prisma/client";
+import { SituacaoPatrimonio, StatusPublicacao } from "@prisma/client";
 import { z } from "zod";
 
 const optionalText = (max, message) => z.string().trim().min(1, message).max(max).optional();
 
-const localizacaoSchema = z.strictObject({
+const localizacaoFieldsSchema = z.strictObject({
     endereco: z.string().trim().min(1, "Informe o endereço.").max(250),
     numero: optionalText(30, "Informe um número válido."),
     complemento: optionalText(150, "Informe um complemento válido."),
@@ -15,7 +15,9 @@ const localizacaoSchema = z.strictObject({
         .transform((cep) => cep.replace(/^(\d{5})-?(\d{3})$/, "$1-$2")).optional(),
     latitude: z.number().min(-90, "A latitude mínima é -90.").max(90, "A latitude máxima é 90.").optional(),
     longitude: z.number().min(-180, "A longitude mínima é -180.").max(180, "A longitude máxima é 180.").optional(),
-}).superRefine((localizacao, context) => {
+});
+
+export const localizacaoSchema = localizacaoFieldsSchema.superRefine((localizacao, context) => {
     const hasLatitude = localizacao.latitude !== undefined;
     const hasLongitude = localizacao.longitude !== undefined;
 
@@ -54,3 +56,20 @@ export const patrimonioSlugParamsSchema = z.strictObject({
     slug: z.string().trim().min(1).max(220)
         .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Informe um slug válido."),
 });
+
+export const adminListPatrimoniosQuerySchema = listPatrimoniosQuerySchema.extend({
+    status: z.enum(Object.values(StatusPublicacao)).optional(),
+});
+
+export const patrimonioIdParamsSchema = z.strictObject({ id: z.uuid() });
+
+const nonEmpty = (data) => Object.keys(data).length > 0;
+export const updatePatrimonioSchema = createPatrimonioSchema.partial().extend({
+    situacao: z.enum(Object.values(SituacaoPatrimonio)).optional(),
+    localizacao: localizacaoFieldsSchema.partial().extend({
+        cidade: localizacaoFieldsSchema.shape.cidade.removeDefault().optional(),
+        uf: localizacaoFieldsSchema.shape.uf.removeDefault().optional(),
+    }).refine(nonEmpty, "Informe algum campo da localização.").optional(),
+}).refine(nonEmpty, "Informe algum campo para atualizar.");
+
+export const statusPatrimonioSchema = z.strictObject({}).optional();

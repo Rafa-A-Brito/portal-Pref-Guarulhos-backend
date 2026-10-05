@@ -67,7 +67,7 @@ export const schemas = {
             nome: string("Nome com trim.", { minLength: 1, maxLength: 200, example: "Casa da Cultura Exemplo" }),
             descricao: string("Descrição com trim.", { minLength: 1, example: "Edificação de interesse cultural." }),
             descricaoResumida: string("Resumo com trim.", { minLength: 1, maxLength: 500, example: "Edificação histórica em Guarulhos." }),
-            categoriaId: string("UUID de uma categoria existente.", { format: "uuid", example: "11111111-1111-4111-8111-111111111111" }),
+            categoriaId: string("UUID da categoria Histórico no banco local de demonstração. Em outro banco, consulte a tabela categoria e substitua o valor.", { format: "uuid", example: "48aa8522-76c4-459b-b86b-8149a74a54fd" }),
             historia: string("História com trim.", { minLength: 1 }),
             importanciaCultural: string("Importância cultural com trim.", { minLength: 1 }),
             situacao: { ...ref("Situacao"), default: "NAO_INFORMADO" },
@@ -98,4 +98,50 @@ export const schemas = {
     PatrimonioDetalheResponse: { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: ref("PatrimonioDetalhe") } },
     PatrimonioCriado: { type: "object", required: ["id", "nome", "slug", "descricao", "descricaoResumida", "historia", "importanciaCultural", "situacao", "status", "categoriaId", "createdBy", "updatedBy", "createdAt", "updatedAt", "publicadoEm", "arquivadoEm", "categoria", "localizacao"], properties: { id: string("UUID", { format: "uuid" }), nome: { type: "string" }, slug: { type: "string" }, descricao: { type: "string" }, descricaoResumida: { type: "string" }, historia: nullable({ type: "string" }), importanciaCultural: nullable({ type: "string" }), situacao: ref("Situacao"), status: { type: "string", enum: ["RASCUNHO"] }, categoriaId: string("UUID", { format: "uuid" }), createdBy: string("UUID do usuário autenticado.", { format: "uuid" }), updatedBy: nullable(string("UUID", { format: "uuid" })), createdAt: string("Data ISO 8601", { format: "date-time" }), updatedAt: string("Data ISO 8601", { format: "date-time" }), publicadoEm: nullable(string("Data ISO 8601", { format: "date-time" })), arquivadoEm: nullable(string("Data ISO 8601", { format: "date-time" })), categoria: ref("CategoriaCompleta"), localizacao: nullable({ type: "object", allOf: [ref("Localizacao")] }) } },
     PatrimonioCriadoResponse: { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: ref("PatrimonioCriado") } },
+};
+
+schemas.LocalizacaoPatch = {
+    ...schemas.LocalizacaoRequest,
+    required: undefined, minProperties: 1,
+    description: "Atualização parcial. Campos omitidos são preservados. Ao criar, endereco e bairro são obrigatórios; cidade/uf assumem Guarulhos/SP. O estado final deve ter ambas as coordenadas ou nenhuma.",
+    properties: { ...schemas.LocalizacaoRequest.properties,
+        cidade: { ...schemas.LocalizacaoRequest.properties.cidade, default: undefined },
+        uf: { ...schemas.LocalizacaoRequest.properties.uf, default: undefined },
+    },
+};
+schemas.ChangePasswordRequest = {
+    type: "object", additionalProperties: false, required: ["senhaAtual", "novaSenha"],
+    properties: {
+        senhaAtual: string("Senha atual sem trim ou outras transformações; de 1 a 72 bytes em UTF-8.", { writeOnly: true, minLength: 1, example: "SenhaAtual123!" }),
+        novaSenha: string("Mesmas regras do cadastro: pelo menos 12 caracteres Unicode e no máximo 72 bytes em UTF-8. Espaços são preservados.", { writeOnly: true, minLength: 12, example: "NovaSenhaSegura123!" }),
+    },
+};
+schemas.ChangePasswordResponse = {
+    type: "object", required: ["success", "message"],
+    properties: { success: { type: "boolean", enum: [true] }, message: { type: "string", example: "Senha alterada com sucesso." } },
+};
+schemas.PatrimonioPatch = {
+    ...schemas.PatrimonioRequest, required: undefined, minProperties: 1,
+    properties: { ...schemas.PatrimonioRequest.properties, situacao: ref("Situacao"), localizacao: ref("LocalizacaoPatch") },
+};
+schemas.PatrimonioAdminResumo = {
+    ...schemas.PatrimonioResumo,
+    required: [...schemas.PatrimonioResumo.required, "status", "arquivadoEm"],
+    properties: { ...schemas.PatrimonioResumo.properties, status: ref("StatusPublicacao"), arquivadoEm: nullable(string("Data ISO 8601", { format: "date-time" })) },
+};
+schemas.PatrimonioAdmin = {
+    ...schemas.PatrimonioCriado,
+    required: [...schemas.PatrimonioCriado.required, "imagens", "documentos"],
+    properties: { ...schemas.PatrimonioCriado.properties, status: ref("StatusPublicacao"),
+        imagens: { type: "array", items: { allOf: [ref("ImagemDetalhe"), { type: "object", properties: { patrimonioId: string("UUID", { format: "uuid" }), createdAt: string("Data ISO 8601", { format: "date-time" }) } }] } },
+        documentos: { type: "array", items: { allOf: [ref("Documento"), { type: "object", properties: { patrimonioId: string("UUID", { format: "uuid" }), createdAt: string("Data ISO 8601", { format: "date-time" }) } }] } },
+    },
+};
+schemas.PatrimonioAdminResponse = { ...schemas.PatrimonioCriadoResponse, properties: { success: { type: "boolean", enum: [true] }, data: ref("PatrimonioAdmin") } };
+schemas.PatrimonioAdminListaResponse = {
+    ...schemas.PatrimonioListaResponse,
+    properties: { success: { type: "boolean", enum: [true] }, data: {
+        ...schemas.PatrimonioListaResponse.properties.data,
+        properties: { itens: { type: "array", items: ref("PatrimonioAdminResumo") }, paginacao: ref("Paginacao") },
+    } },
 };
