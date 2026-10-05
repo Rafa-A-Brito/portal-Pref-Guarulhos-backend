@@ -179,7 +179,9 @@ Com o backend em execução, abra [Swagger UI](http://localhost:3333/api/docs) n
 
 Para testar as rotas protegidas, faça `POST /api/auth/login` na própria interface com uma conta ativa. Copie o `data.token` da resposta, clique em **Authorize** e informe o token JWT. O Swagger UI enviará o cabeçalho `Authorization: Bearer <token>` somente nas operações protegidas; o token não é persistido no navegador por padrão. `POST /api/admins` exige ADMIN; `POST /api/admin/patrimonios` aceita ADMIN ou EDITOR. É necessário já existir uma conta ADMIN para cadastrar outras contas; não há cadastro público.
 
-Use **Try it out** para preencher os parâmetros e executar uma requisição. Consultas públicas como `GET /api/patrimonios?pagina=1&limite=20` não exigem autenticação. **Atenção:** Try it out nas operações POST executa ações reais no banco configurado. Confira a variável de ambiente do banco antes de criar administradores ou patrimônios.
+Use **Try it out** para preencher os parâmetros e executar uma requisição. Consultas públicas como `GET /api/patrimonios?pagina=1&limite=20` não exigem autenticação. **Atenção:** Try it out nas operações POST e PATCH executa ações reais no banco configurado. Confira a variável de ambiente do banco antes de criar administradores, patrimônios ou trocar senhas.
+
+Para trocar a própria senha, faça login com uma conta EDITOR ou ADMIN, autorize o token e execute `PATCH /api/auth/senha` com `senhaAtual` e `novaSenha`. A nova senha deve ter pelo menos 12 caracteres e no máximo 72 bytes em UTF-8. A senha antiga deixará de funcionar no próximo login. JWTs já emitidos continuam válidos até expirar, pois a API não possui revogação de tokens.
 
 Para executar o frontend, utilize o procedimento definido no README do respectivo repositório.
 
@@ -267,6 +269,9 @@ src/
 ---
 
 ## 🤝 Contribuindo
+
+Para testar consulta, edição, publicação e arquivamento de patrimônios pelo Swagger ou Postman,
+consulte o [guia de administração de patrimônios](docs/patrimonios-admin.md).
 
 Contribuições são bem-vindas! Para contribuir:
 

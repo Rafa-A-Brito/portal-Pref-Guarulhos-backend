@@ -2,6 +2,9 @@ import { Prisma, SituacaoPatrimonio, StatusPublicacao } from "@prisma/client";
 import prisma from "../config/prisma.js";
 import ConflictError from "../errors/ConflictError.js";
 import NotFoundError from "../errors/NotFoundError.js";
+import BadRequestError from "../errors/BadRequestError.js";
+import ForbiddenError from "../errors/ForbiddenError.js";
+import { createPatrimonioSchema, localizacaoSchema } from "../schemas/patrimonioSchema.js";
 import { slugify } from "../utils/slug.js";
 
 const MAX_SLUG_ATTEMPTS = 1000;
@@ -96,9 +99,17 @@ async function generateUniqueSlug(client, nome) {
     throw error;
 }
 
-export async function listPatrimonios({ busca, categoria, situacao, bairro, pagina, limite }) {
+export async function listPatrimonios(query) {
+    return listWithStatus(query, StatusPublicacao.PUBLICADO, publicListSelect);
+}
+
+export async function listAdminPatrimonios(query) {
+    return listWithStatus(query, query.status, { ...publicListSelect, status: true, arquivadoEm: true });
+}
+
+async function listWithStatus({ busca, categoria, situacao, bairro, pagina, limite }, status, select) {
     const where = {
-        status: StatusPublicacao.PUBLICADO,
+        ...(status && { status }),
         ...(busca && {
             OR: [
                 { nome: { contains: busca, mode: "insensitive" } },
@@ -124,7 +135,7 @@ export async function listPatrimonios({ busca, categoria, situacao, bairro, pagi
             skip: (pagina - 1) * limite,
             take: limite,
             orderBy: [{ nome: "asc" }, { id: "asc" }],
-            select: publicListSelect,
+            select,
         }),
     ]);
 
@@ -137,6 +148,94 @@ export async function listPatrimonios({ busca, categoria, situacao, bairro, pagi
             totalPaginas: Math.ceil(total / limite),
         },
     };
+}
+
+const adminInclude = {
+    categoria: true,
+    localizacao: true,
+    imagens: { orderBy: [{ principal: "desc" }, { ordem: "asc" }, { id: "asc" }] },
+    documentos: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+};
+
+export async function getAdminPatrimonio(id, client = prisma) {
+    const patrimonio = await client.patrimonio.findUnique({ where: { id }, include: adminInclude });
+    if (!patrimonio) {
+        const error = new NotFoundError("Patrimônio não encontrado.");
+        error.code = "PATRIMONIO_NOT_FOUND";
+        throw error;
+    }
+    return patrimonio;
+}
+
+// Serializa edição e transições para que a permissão e as datas usem o estado atual.
+async function lockPatrimonio(transaction, id) {
+    await transaction.$queryRaw`SELECT id FROM patrimonio WHERE id = ${id}::uuid FOR UPDATE`;
+    return getAdminPatrimonio(id, transaction);
+}
+
+function locationInput(localizacao) {
+    if (!localizacao) return undefined;
+    const { id, patrimonioId, ...fields } = localizacao;
+    return Object.fromEntries(Object.entries(fields)
+        .filter(([, value]) => value !== null)
+        .map(([key, value]) => [key, ["latitude", "longitude"].includes(key) ? Number(value) : value]));
+}
+
+export async function updatePatrimonio(id, data, user) {
+    return prisma.$transaction(async (transaction) => {
+        const current = await lockPatrimonio(transaction, id);
+        if (user.role !== "ADMIN" && (user.role !== "EDITOR" || current.status !== "RASCUNHO")) {
+            throw new ForbiddenError("Editor pode editar somente rascunhos.");
+        }
+        if (data.categoriaId !== undefined) {
+            const categoria = await transaction.categoria.findUnique({ where: { id: data.categoriaId } });
+            if (!categoria) throw new BadRequestError("Categoria não encontrada.");
+        }
+        const { localizacao, ...fields } = data;
+        let locationUpdate;
+        if (localizacao !== undefined) {
+            const finalLocation = localizacaoSchema.parse({ ...locationInput(current.localizacao), ...localizacao });
+            locationUpdate = current.localizacao ? { update: localizacao } : { create: finalLocation };
+        }
+        return transaction.patrimonio.update({
+            where: { id },
+            data: { ...fields, updatedBy: user.id, ...(locationUpdate && { localizacao: locationUpdate }) },
+            include: adminInclude,
+        });
+    });
+}
+
+export async function changePatrimonioStatus(id, status, user) {
+    if (user.role !== "ADMIN") throw new ForbiddenError();
+    return prisma.$transaction(async (transaction) => {
+        const current = await lockPatrimonio(transaction, id);
+        if (current.status === status) return current;
+        if (status === StatusPublicacao.PUBLICADO) {
+            createPatrimonioSchema.parse({
+                nome: current.nome,
+                descricao: current.descricao,
+                descricaoResumida: current.descricaoResumida,
+                categoriaId: current.categoriaId,
+                historia: current.historia ?? undefined,
+                importanciaCultural: current.importanciaCultural ?? undefined,
+                situacao: current.situacao,
+                localizacao: locationInput(current.localizacao),
+            });
+        } else if (status !== StatusPublicacao.ARQUIVADO) {
+            throw new BadRequestError("Transição de status inválida.");
+        }
+        return transaction.patrimonio.update({
+            where: { id },
+            data: {
+                status,
+                updatedBy: user.id,
+                ...(status === StatusPublicacao.PUBLICADO
+                    ? { publicadoEm: new Date(), arquivadoEm: null }
+                    : { arquivadoEm: new Date() }),
+            },
+            include: adminInclude,
+        });
+    });
 }
 
 export async function getPatrimonioBySlug(slug) {

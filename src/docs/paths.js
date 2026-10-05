@@ -15,7 +15,8 @@ const internal = error("Falha inesperada, inclusive falha de acesso ao banco.", 
 const body = (name, example) => ({ required: true, content: { "application/json": { schema: schema(name), example } } });
 const bearerAuth = [{ bearerAuth: [] }];
 
-const categoriaId = "11111111-1111-4111-8111-111111111111";
+// ID da categoria Histórico no banco local de demonstração.
+const categoriaId = "48aa8522-76c4-459b-b86b-8149a74a54fd";
 const patrimonioId = "22222222-2222-4222-8222-222222222222";
 const usuarioId = "33333333-3333-4333-8333-333333333333";
 const imagemId = "44444444-4444-4444-8444-444444444444";
@@ -96,7 +97,7 @@ export const paths = {
     },
     "/api/admin/patrimonios": {
         post: {
-            tags: ["Patrimônios administrativos"], summary: "Cria um patrimônio em rascunho", description: "Disponível para ADMIN e EDITOR autenticados. Categoria deve existir. O slug é gerado do nome. O status é sempre RASCUNHO, independentemente da situação. Executa uma gravação real no banco configurado.",
+            tags: ["Patrimônios administrativos"], summary: "Cria um patrimônio em rascunho", description: "Disponível para ADMIN e EDITOR autenticados. O categoriaId do exemplo pertence à categoria Histórico no banco local de demonstração. Em outro banco, consulte a tabela categoria e substitua o UUID. O slug é gerado do nome. O status é sempre RASCUNHO, independentemente da situação. Executa uma gravação real no banco configurado.",
             security: bearerAuth,
             requestBody: body("PatrimonioRequest", { nome: "Casa da Cultura Exemplo", descricao: "Edificação de interesse cultural.", descricaoResumida: "Edificação histórica em Guarulhos.", categoriaId, situacao: "PRESERVADO", localizacao: { endereco: "Rua Exemplo", numero: "10", bairro: "Centro", latitude: -23.4628, longitude: -46.5333 } }),
             responses: {
@@ -109,3 +110,49 @@ export const paths = {
         },
     },
 };
+
+const idParameter = { in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" }, example: patrimonioId, description: "UUID do patrimônio, tratado como texto." };
+const adminResponses = {
+    200: response("Dados administrativos com categoria, localização e todas as mídias.", "PatrimonioAdminResponse"),
+    400: badRequest, 401: unauthorized, 403: forbidden,
+    404: error("Patrimônio inexistente.", "PATRIMONIO_NOT_FOUND", "Patrimônio não encontrado."),
+    500: internal,
+};
+paths["/api/admin/patrimonios"].get = {
+    tags: ["Patrimônios administrativos"], summary: "Lista patrimônios de todos os status",
+    description: "ADMIN e EDITOR. Reutiliza filtros públicos e ordenação estável por nome e ID. Sem resultados retorna itens vazio. Exemplo: ?status=RASCUNHO&busca=igreja&pagina=1&limite=20.",
+    security: bearerAuth,
+    parameters: [...paths["/api/patrimonios"].get.parameters, { in: "query", name: "status", schema: schema("StatusPublicacao"), description: "Opcional; omitido retorna todos os status." }],
+    responses: { 200: response("Lista administrativa paginada.", "PatrimonioAdminListaResponse"), 400: badRequest, 401: unauthorized, 403: forbidden, 500: internal },
+};
+paths["/api/admin/patrimonios/{id}"] = {
+    get: { tags: ["Patrimônios administrativos"], summary: "Consulta detalhes para edição", description: "ADMIN e EDITOR podem consultar qualquer status, incluindo rascunhos e arquivados.", security: bearerAuth, parameters: [idParameter], responses: adminResponses },
+    patch: { tags: ["Patrimônios administrativos"], summary: "Edita parcialmente um patrimônio",
+        description: "EDITOR edita somente RASCUNHO; ADMIN edita qualquer status. Preserva campos omitidos e slug, registra updatedBy. Recusa corpo vazio, campos desconhecidos, status, autoria, IDs do patrimônio, datas e mídias. Categoria inexistente retorna 400. Localização é criada ou atualizada em transação, validando as coordenadas finais.",
+        security: bearerAuth, parameters: [idParameter], requestBody: body("PatrimonioPatch", { nome: "Novo nome", localizacao: { bairro: "Centro" } }), responses: { ...adminResponses, 413: tooLarge },
+    },
+};
+paths["/api/auth/senha"] = {
+    patch: {
+        tags: ["Autenticação"], summary: "Troca a própria senha",
+        description: "EDITOR e ADMIN autenticados. Confere a senha atual e altera somente a senha da conta do token. A nova senha deve ser diferente. JWTs já emitidos continuam válidos até expirar, pois a API não possui revogação de tokens. Use o novo valor para o próximo login.",
+        security: bearerAuth,
+        requestBody: body("ChangePasswordRequest", { senhaAtual: "SenhaAtual123!", novaSenha: "NovaSenhaSegura123!" }),
+        responses: {
+            200: response("Senha alterada.", "ChangePasswordResponse", { success: true, message: "Senha alterada com sucesso." }),
+            400: error("Dados inválidos, senha atual incorreta ou nova senha igual à atual.", "BAD_REQUEST", "Dados inválidos."),
+            401: unauthorized, 403: forbidden, 413: tooLarge, 500: internal,
+        },
+    },
+};
+for (const [action, summary, description] of [
+    ["publicar", "Publica ou republica um patrimônio", "Somente ADMIN. Valida dados do cadastro, publica rascunho ou arquivado, define publicadoEm para a data atual, limpa arquivadoEm e registra updatedBy. Passa a aparecer na consulta pública."],
+    ["arquivar", "Arquiva um patrimônio", "Somente ADMIN. Arquiva rascunho ou publicado, define arquivadoEm e updatedBy, preserva publicadoEm e mídias. Deixa de aparecer na listagem e nos detalhes públicos."],
+]) {
+    paths[`/api/admin/patrimonios/{id}/${action}`] = { patch: {
+        tags: ["Patrimônios administrativos"], summary,
+        description: `${description} Se já estiver no status solicitado, retorna sucesso sem alterar datas ou autoria. Não existe retorno para rascunho.`,
+        security: bearerAuth, parameters: [idParameter], responses: { ...adminResponses, 413: tooLarge },
+        requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: false }, example: {} } } },
+    } };
+}
