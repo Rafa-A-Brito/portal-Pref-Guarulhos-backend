@@ -23,7 +23,7 @@ O contrato OpenAPI também está disponível em `/api/docs.json` e pode ser impo
    '@ | node --input-type=module
    ```
 4. Consulte `GET /api/admin/patrimonios`, com ou sem `status=RASCUNHO`, `PUBLICADO` ou `ARQUIVADO`.
-   Os filtros `busca`, `categoria` (nome), `bairro`, `situacao`, `pagina` e `limite` são os mesmos da consulta pública.
+   Os filtros `busca`, `categoria` (nome principal ou adicional), `bairro`, `situacao`, `pagina` e `limite` são os mesmos da consulta pública.
    A paginação começa em 1, usa 20 itens por padrão e aceita até 100. A ordenação é por nome e ID.
 5. Consulte `GET /api/admin/patrimonios/{id}` para obter dados de edição e mídias em qualquer status.
 6. Edite com `PATCH /api/admin/patrimonios/{id}`, por exemplo:
