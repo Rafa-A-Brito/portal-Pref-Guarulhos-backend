@@ -99,12 +99,16 @@ test("consulta apenas patrimônios publicados com filtros e paginação", async 
         assert.equal(findManyArguments.where.status, "PUBLICADO");
         assert.deepEqual(findManyArguments.where.situacao, "PRESERVADO");
         assert.deepEqual(findManyArguments.where.categoria, {
-            nome: { equals: "Religioso", mode: "insensitive" },
+            OR: [
+                { nome: { equals: "Religioso", mode: "insensitive" } },
+                { slug: { equals: "Religioso", mode: "insensitive" } },
+            ],
         });
         assert.deepEqual(findManyArguments.where.localizacao, {
             is: { bairro: { equals: "Centro", mode: "insensitive" } },
         });
-        assert.equal(findManyArguments.where.OR.length, 5);
+        assert.equal(findManyArguments.where.OR.length, 6);
+        assert.deepEqual(findManyArguments.orderBy[0], { ordemExibicao: { sort: "asc", nulls: "last" } });
         assert.equal(findManyArguments.skip, 10);
         assert.equal(findManyArguments.take, 10);
         assert.deepEqual(resultado.paginacao, {
@@ -258,6 +262,11 @@ test("rejeita situação, coordenadas e campos controlados pelo servidor inváli
         { ...valid, updatedBy: randomUUID() },
         { ...valid, publicadoEm: new Date().toISOString() },
         { ...valid, arquivadoEm: new Date().toISOString() },
+        { ...valid, numeroExibicao: 0 },
+        { ...valid, ordemExibicao: -1 },
+        { ...valid, secoes: [{ titulo: "T", texto: "X", ordem: 1 }] },
+        { ...valid, fatos: [{ rotulo: "R", valor: "V", ordem: 0 }, { rotulo: "R2", valor: "V2", ordem: 0 }] },
+        { ...valid, ligacoes: [{ patrimonioDestinoId: valid.categoriaId, texto: "X", ordem: 0 }, { patrimonioDestinoId: valid.categoriaId, texto: "Y", ordem: 1 }] },
     ];
 
     for (const body of invalidBodies) {
@@ -309,7 +318,9 @@ test("prepara patrimônio e localização para criação atômica como rascunho"
         assert.deepEqual(createArguments.data.localizacao, {
             create: { endereco: "Rua A", bairro: "Centro", cidade: "Guarulhos", uf: "SP" },
         });
-        assert.deepEqual(createArguments.include, { categoria: true, localizacao: true });
+        assert.equal(createArguments.include.categoria, true);
+        assert.equal(createArguments.include.localizacao, true);
+        assert.deepEqual(createArguments.include.secoes, { orderBy: { ordem: "asc" } });
         assert.equal("updatedBy" in createArguments.data, false);
     } finally {
         prisma.$transaction = originalTransaction;

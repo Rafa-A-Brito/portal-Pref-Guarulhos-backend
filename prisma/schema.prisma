@@ -65,7 +65,9 @@ model Patrimonio {
   id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nome                String             @map("name") @db.VarChar(200)
   slug                String             @unique(map: "patrimonio_slug_key") @db.VarChar(220)
-  descricao           String             @db.Text
+  descricao           String?            @db.Text
+  numeroExibicao      Int?               @unique(map: "patrimonio_numero_exibicao_key") @map("numero_exibicao")
+  ordemExibicao       Int?               @unique(map: "patrimonio_ordem_exibicao_key") @map("ordem_exibicao")
   descricaoResumida   String             @map("descricao_resumida") @db.VarChar(500)
   historia            String?            @db.Text
   importanciaCultural String?            @map("importancia_cultural") @db.Text
@@ -79,19 +81,63 @@ model Patrimonio {
   publicadoEm         DateTime?          @map("published_at") @db.Timestamptz(3)
   arquivadoEm         DateTime?          @map("arquivado_em") @db.Timestamptz(3)
 
-  categoria     Categoria             @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
-  criadoPor     User                  @relation("PatrimonioCriadoPor", fields: [createdBy], references: [id], onDelete: Restrict)
-  atualizadoPor User?                 @relation("PatrimonioAtualizadoPor", fields: [updatedBy], references: [id], onDelete: Restrict)
-  localizacao   Localizacao?
-  imagens       PatrimonioImagem[]
-  documentos    PatrimonioDocumento[]
-  rotas         RotaPatrimonio[]
+  categoria         Categoria             @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  criadoPor         User                  @relation("PatrimonioCriadoPor", fields: [createdBy], references: [id], onDelete: Restrict)
+  atualizadoPor     User?                 @relation("PatrimonioAtualizadoPor", fields: [updatedBy], references: [id], onDelete: Restrict)
+  localizacao       Localizacao?
+  imagens           PatrimonioImagem[]
+  documentos        PatrimonioDocumento[]
+  rotas             RotaPatrimonio[]
+  secoes            PatrimonioSecao[]
+  fatos             PatrimonioFato[]
+  ligacoes          PatrimonioLigacao[]   @relation("LigacaoOrigem")
+  ligacoesRecebidas PatrimonioLigacao[]   @relation("LigacaoDestino")
 
   @@index([categoriaId, status])
   @@index([createdBy])
   @@index([updatedBy])
   @@index([status])
   @@map("patrimonio")
+}
+
+model PatrimonioSecao {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patrimonioId String     @map("patrimonio_id") @db.Uuid
+  icone        String?    @db.Text
+  titulo       String     @db.Text
+  texto        String     @db.Text
+  ordem        Int
+  patrimonio   Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Cascade)
+
+  @@unique([patrimonioId, ordem], map: "patrimonio_secoes_patrimonio_id_ordem_key")
+  @@map("patrimonio_secoes")
+}
+
+model PatrimonioFato {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patrimonioId String     @map("patrimonio_id") @db.Uuid
+  rotulo       String     @db.Text
+  valor        String     @db.Text
+  ordem        Int
+  patrimonio   Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Cascade)
+
+  @@unique([patrimonioId, ordem], map: "patrimonio_fatos_patrimonio_id_ordem_key")
+  @@map("patrimonio_fatos")
+}
+
+model PatrimonioLigacao {
+  id                  String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patrimonioOrigemId  String     @map("patrimonio_origem_id") @db.Uuid
+  patrimonioDestinoId String     @map("patrimonio_destino_id") @db.Uuid
+  texto               String     @db.Text
+  ordem               Int
+  origem              Patrimonio @relation("LigacaoOrigem", fields: [patrimonioOrigemId], references: [id], onDelete: Cascade, map: "patrimonio_ligacoes_origem_fkey")
+  destino             Patrimonio @relation("LigacaoDestino", fields: [patrimonioDestinoId], references: [id], onDelete: Cascade, map: "patrimonio_ligacoes_destino_fkey")
+
+  @@unique([patrimonioOrigemId, patrimonioDestinoId], map: "patrimonio_ligacoes_origem_destino_key")
+  @@unique([patrimonioOrigemId, ordem], map: "patrimonio_ligacoes_origem_ordem_key")
+  @@index([patrimonioDestinoId], map: "patrimonio_ligacoes_destino_idx")
+  @@map("patrimonio_ligacoes")
 }
 
 model Localizacao {

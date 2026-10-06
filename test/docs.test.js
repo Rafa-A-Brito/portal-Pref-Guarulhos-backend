@@ -25,6 +25,9 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     assert.equal(openapi.components.schemas.LoginRequest.properties.password.writeOnly, true);
     assert.equal(JSON.stringify(openapi).includes("passwordHash"), false);
     assert.equal(openapi.components.schemas.PatrimonioResumo.properties.imagens.maxItems, 1);
+    assert.equal(openapi.components.schemas.PatrimonioRequest.required.includes("descricao"), false);
+    assert.equal(openapi.components.schemas.PatrimonioDetalhe.properties.descricao.nullable, true);
+    for (const name of ["Secao", "Fato", "Ligacao"]) assert.ok(openapi.components.schemas[name].properties.id);
 });
 
 test("Swagger UI e JSON respondem sem consultar o banco", async () => {
