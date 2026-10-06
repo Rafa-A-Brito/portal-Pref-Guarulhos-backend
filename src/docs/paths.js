@@ -97,7 +97,7 @@ export const paths = {
     },
     "/api/admin/patrimonios": {
         post: {
-            tags: ["Patrimônios administrativos"], summary: "Cria um patrimônio em rascunho", description: "Disponível para ADMIN e EDITOR autenticados. O categoriaId do exemplo pertence à categoria Histórico no banco local de demonstração. Em outro banco, consulte a tabela categoria e substitua o UUID. O slug é gerado do nome. O status é sempre RASCUNHO, independentemente da situação. Executa uma gravação real no banco configurado.",
+            tags: ["Patrimônios administrativos"], summary: "Cria um patrimônio em rascunho", description: "Disponível para ADMIN e EDITOR autenticados. O categoriaId do exemplo pertence à categoria Histórico no banco local de demonstração. Em outro banco, consulte a tabela categoria e substitua o UUID. categoriasAdicionais é opcional, aceita até 6 UUIDs distintos e não pode incluir a categoria principal. O slug é gerado do nome. O status é sempre RASCUNHO, independentemente da situação. Executa uma gravação real no banco configurado.",
             security: bearerAuth,
             requestBody: body("PatrimonioRequest", { nome: "Casa da Cultura Exemplo", descricao: "Edificação de interesse cultural.", descricaoResumida: "Edificação histórica em Guarulhos.", categoriaId, situacao: "PRESERVADO", localizacao: { endereco: "Rua Exemplo", numero: "10", bairro: "Centro", latitude: -23.4628, longitude: -46.5333 } }),
             responses: {
@@ -128,7 +128,7 @@ paths["/api/admin/patrimonios"].get = {
 paths["/api/admin/patrimonios/{id}"] = {
     get: { tags: ["Patrimônios administrativos"], summary: "Consulta detalhes para edição", description: "ADMIN e EDITOR podem consultar qualquer status, incluindo rascunhos e arquivados.", security: bearerAuth, parameters: [idParameter], responses: adminResponses },
     patch: { tags: ["Patrimônios administrativos"], summary: "Edita parcialmente um patrimônio",
-        description: "EDITOR edita somente RASCUNHO; ADMIN edita qualquer status. Preserva campos omitidos e slug, registra updatedBy. Recusa corpo vazio, campos desconhecidos, status, autoria, IDs do patrimônio, datas e mídias. Categoria inexistente retorna 400. Localização é criada ou atualizada em transação, validando as coordenadas finais.",
+        description: "EDITOR edita somente RASCUNHO; ADMIN edita qualquer status. Preserva campos omitidos e slug, registra updatedBy. Permite substituir categoriasAdicionais por até 6 categorias distintas da principal; envie [] para removê-las. Recusa corpo vazio, campos desconhecidos, status, autoria, IDs do patrimônio, datas e mídias. Categoria inexistente retorna 400. Localização é criada ou atualizada em transação, validando as coordenadas finais.",
         security: bearerAuth, parameters: [idParameter], requestBody: body("PatrimonioPatch", { nome: "Novo nome", localizacao: { bairro: "Centro" } }), responses: { ...adminResponses, 413: tooLarge },
     },
 };

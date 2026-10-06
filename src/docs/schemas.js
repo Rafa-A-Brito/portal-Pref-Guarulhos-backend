@@ -68,6 +68,7 @@ export const schemas = {
             descricao: string("Descrição com trim.", { minLength: 1, example: "Edificação de interesse cultural." }),
             descricaoResumida: string("Resumo com trim.", { minLength: 1, maxLength: 500, example: "Edificação histórica em Guarulhos." }),
             categoriaId: string("UUID da categoria Histórico no banco local de demonstração. Em outro banco, consulte a tabela categoria e substitua o valor.", { format: "uuid", example: "48aa8522-76c4-459b-b86b-8149a74a54fd" }),
+            categoriasAdicionais: { type: "array", maxItems: 6, uniqueItems: true, description: "UUIDs de categorias adicionais existentes, sem repetir a categoria principal.", items: { type: "string", format: "uuid" } },
             historia: string("História com trim.", { minLength: 1 }),
             importanciaCultural: string("Importância cultural com trim.", { minLength: 1 }),
             situacao: { ...ref("Situacao"), default: "NAO_INFORMADO" },
@@ -145,3 +146,8 @@ schemas.PatrimonioAdminListaResponse = {
         properties: { itens: { type: "array", items: ref("PatrimonioAdminResumo") }, paginacao: ref("Paginacao") },
     } },
 };
+
+for (const name of ["PatrimonioResumo", "PatrimonioDetalhe", "PatrimonioCriado", "PatrimonioAdminResumo", "PatrimonioAdmin"]) {
+    schemas[name].properties.categoriasAdicionais = { type: "array", items: ref("CategoriaResumo") };
+    schemas[name].required.push("categoriasAdicionais");
+}

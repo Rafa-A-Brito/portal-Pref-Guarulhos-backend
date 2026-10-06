@@ -9,6 +9,22 @@ import { slugify } from "../utils/slug.js";
 
 const MAX_SLUG_ATTEMPTS = 1000;
 
+const categoriaResumoSelect = { id: true, nome: true, slug: true };
+
+// O Prisma devolve [{ categoria: {...} }]; achatamos para [{...}] antes de responder.
+const categoriasAdicionaisSelect = {
+    orderBy: { categoria: { nome: "asc" } },
+    select: { categoria: { select: categoriaResumoSelect } },
+};
+
+function achatarCategorias(patrimonio) {
+    const { categoriasAdicionais, ...resto } = patrimonio;
+    return {
+        ...resto,
+        categoriasAdicionais: (categoriasAdicionais ?? []).map((item) => item.categoria),
+    };
+}
+
 const publicListSelect = {
     id: true,
     nome: true,
@@ -16,7 +32,8 @@ const publicListSelect = {
     descricaoResumida: true,
     situacao: true,
     publicadoEm: true,
-    categoria: { select: { id: true, nome: true, slug: true } },
+    categoria: { select: categoriaResumoSelect },
+    categoriasAdicionais: categoriasAdicionaisSelect,
     localizacao: true,
     imagens: {
         orderBy: [{ principal: "desc" }, { ordem: "asc" }],
@@ -43,6 +60,7 @@ const publicDetailSelect = {
     publicadoEm: true,
     updatedAt: true,
     categoria: { select: { id: true, nome: true, slug: true, descricao: true } },
+    categoriasAdicionais: categoriasAdicionaisSelect,
     localizacao: true,
     imagens: {
         orderBy: [{ principal: "desc" }, { ordem: "asc" }],
@@ -119,8 +137,19 @@ async function listWithStatus({ busca, categoria, situacao, bairro, pagina, limi
                 { importanciaCultural: { contains: busca, mode: "insensitive" } },
             ],
         }),
+        // O filtro de categoria casa com a principal OU com alguma adicional.
+        // Fica dentro de AND para não colidir com o OR da busca acima.
         ...(categoria && {
-            categoria: { nome: { equals: categoria, mode: "insensitive" } },
+            AND: [{
+                OR: [
+                    { categoria: { nome: { equals: categoria, mode: "insensitive" } } },
+                    {
+                        categoriasAdicionais: {
+                            some: { categoria: { nome: { equals: categoria, mode: "insensitive" } } },
+                        },
+                    },
+                ],
+            }],
         }),
         ...(situacao && { situacao }),
         ...(bairro && {
@@ -140,7 +169,7 @@ async function listWithStatus({ busca, categoria, situacao, bairro, pagina, limi
     ]);
 
     return {
-        itens,
+        itens: itens.map(achatarCategorias),
         paginacao: {
             pagina,
             limite,
@@ -152,6 +181,7 @@ async function listWithStatus({ busca, categoria, situacao, bairro, pagina, limi
 
 const adminInclude = {
     categoria: true,
+    categoriasAdicionais: { include: { categoria: true } },
     localizacao: true,
     imagens: { orderBy: [{ principal: "desc" }, { ordem: "asc" }, { id: "asc" }] },
     documentos: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
@@ -164,10 +194,9 @@ export async function getAdminPatrimonio(id, client = prisma) {
         error.code = "PATRIMONIO_NOT_FOUND";
         throw error;
     }
-    return patrimonio;
+    return achatarCategorias(patrimonio);
 }
 
-// Serializa edição e transições para que a permissão e as datas usem o estado atual.
 async function lockPatrimonio(transaction, id) {
     await transaction.$queryRaw`SELECT id FROM patrimonio WHERE id = ${id}::uuid FOR UPDATE`;
     return getAdminPatrimonio(id, transaction);
@@ -187,21 +216,38 @@ export async function updatePatrimonio(id, data, user) {
         if (user.role !== "ADMIN" && (user.role !== "EDITOR" || current.status !== "RASCUNHO")) {
             throw new ForbiddenError("Editor pode editar somente rascunhos.");
         }
+        const categoriaId = data.categoriaId ?? current.categoriaId;
+        const adicionaisIds = data.categoriasAdicionais ?? current.categoriasAdicionais.map((item) => item.id);
+        if (adicionaisIds.includes(categoriaId)) {
+            throw new BadRequestError("A categoria principal não deve estar entre as adicionais.");
+        }
         if (data.categoriaId !== undefined) {
             const categoria = await transaction.categoria.findUnique({ where: { id: data.categoriaId } });
             if (!categoria) throw new BadRequestError("Categoria não encontrada.");
         }
-        const { localizacao, ...fields } = data;
+        if (data.categoriasAdicionais !== undefined && adicionaisIds.length > 0) {
+            const encontradas = await transaction.categoria.findMany({ where: { id: { in: adicionaisIds } }, select: { id: true } });
+            if (encontradas.length !== adicionaisIds.length) throw new BadRequestError("Categoria adicional não encontrada.");
+        }
+        const { localizacao, categoriasAdicionais, ...fields } = data;
         let locationUpdate;
         if (localizacao !== undefined) {
             const finalLocation = localizacaoSchema.parse({ ...locationInput(current.localizacao), ...localizacao });
             locationUpdate = current.localizacao ? { update: localizacao } : { create: finalLocation };
         }
-        return transaction.patrimonio.update({
+        const updated = await transaction.patrimonio.update({
             where: { id },
-            data: { ...fields, updatedBy: user.id, ...(locationUpdate && { localizacao: locationUpdate }) },
+            data: {
+                ...fields, updatedBy: user.id,
+                ...(locationUpdate && { localizacao: locationUpdate }),
+                ...(categoriasAdicionais !== undefined && { categoriasAdicionais: {
+                    deleteMany: {},
+                    create: categoriasAdicionais.map((categoriaId) => ({ categoriaId })),
+                } }),
+            },
             include: adminInclude,
         });
+        return achatarCategorias(updated);
     });
 }
 
@@ -216,6 +262,7 @@ export async function changePatrimonioStatus(id, status, user) {
                 descricao: current.descricao,
                 descricaoResumida: current.descricaoResumida,
                 categoriaId: current.categoriaId,
+                categoriasAdicionais: current.categoriasAdicionais.map((item) => item.id),
                 historia: current.historia ?? undefined,
                 importanciaCultural: current.importanciaCultural ?? undefined,
                 situacao: current.situacao,
@@ -224,7 +271,7 @@ export async function changePatrimonioStatus(id, status, user) {
         } else if (status !== StatusPublicacao.ARQUIVADO) {
             throw new BadRequestError("Transição de status inválida.");
         }
-        return transaction.patrimonio.update({
+        const updated = await transaction.patrimonio.update({
             where: { id },
             data: {
                 status,
@@ -235,6 +282,7 @@ export async function changePatrimonioStatus(id, status, user) {
             },
             include: adminInclude,
         });
+        return achatarCategorias(updated);
     });
 }
 
@@ -250,7 +298,7 @@ export async function getPatrimonioBySlug(slug) {
         throw error;
     }
 
-    return patrimonio;
+    return achatarCategorias(patrimonio);
 }
 
 export async function createPatrimonio(data, createdBy) {
@@ -267,9 +315,26 @@ export async function createPatrimonio(data, createdBy) {
                 throw error;
             }
 
+            // A principal não entra na lista de adicionais (o schema zod já rejeita, aqui é defesa extra).
+            const adicionaisIds = [...new Set(data.categoriasAdicionais ?? [])]
+                .filter((id) => id !== data.categoriaId);
+
+            if (adicionaisIds.length > 0) {
+                const encontradas = await transaction.categoria.findMany({
+                    where: { id: { in: adicionaisIds } },
+                    select: { id: true },
+                });
+
+                if (encontradas.length !== adicionaisIds.length) {
+                    const error = new NotFoundError("Categoria adicional não encontrada.");
+                    error.code = "CATEGORIA_NOT_FOUND";
+                    throw error;
+                }
+            }
+
             const slug = await generateUniqueSlug(transaction, data.nome);
 
-            return transaction.patrimonio.create({
+            const criado = await transaction.patrimonio.create({
                 data: {
                     nome: data.nome,
                     slug,
@@ -282,12 +347,20 @@ export async function createPatrimonio(data, createdBy) {
                     categoriaId: data.categoriaId,
                     createdBy,
                     ...(data.localizacao && { localizacao: { create: data.localizacao } }),
+                    ...(adicionaisIds.length > 0 && {
+                        categoriasAdicionais: {
+                            create: adicionaisIds.map((categoriaId) => ({ categoriaId })),
+                        },
+                    }),
                 },
                 include: {
                     categoria: true,
+                    categoriasAdicionais: { include: { categoria: true } },
                     localizacao: true,
                 },
             });
+
+            return achatarCategorias(criado);
         });
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
