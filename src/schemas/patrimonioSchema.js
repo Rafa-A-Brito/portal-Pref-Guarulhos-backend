@@ -1,9 +1,9 @@
-import { SituacaoPatrimonio } from "@prisma/client";
+import { SituacaoPatrimonio, StatusPublicacao } from "@prisma/client";
 import { z } from "zod";
 
 const optionalText = (max, message) => z.string().trim().min(1, message).max(max).optional();
 
-const localizacaoSchema = z.strictObject({
+const localizacaoFieldsSchema = z.strictObject({
     endereco: z.string().trim().min(1, "Informe o endereço.").max(250),
     numero: optionalText(30, "Informe um número válido."),
     complemento: optionalText(150, "Informe um complemento válido."),
@@ -15,7 +15,9 @@ const localizacaoSchema = z.strictObject({
         .transform((cep) => cep.replace(/^(\d{5})-?(\d{3})$/, "$1-$2")).optional(),
     latitude: z.number().min(-90, "A latitude mínima é -90.").max(90, "A latitude máxima é 90.").optional(),
     longitude: z.number().min(-180, "A longitude mínima é -180.").max(180, "A longitude máxima é 180.").optional(),
-}).superRefine((localizacao, context) => {
+});
+
+export const localizacaoSchema = localizacaoFieldsSchema.superRefine((localizacao, context) => {
     const hasLatitude = localizacao.latitude !== undefined;
     const hasLongitude = localizacao.longitude !== undefined;
 
@@ -40,7 +42,7 @@ const sectionSchema = z.strictObject({
 const factSchema = z.strictObject({ rotulo: z.string().trim().min(1), valor: z.string().trim().min(1), ordem: position });
 const linkSchema = z.strictObject({ patrimonioDestinoId: z.uuid(), texto: z.string().trim().min(1), ordem: position });
 
-export const createPatrimonioSchema = z.strictObject({
+const createPatrimonioFieldsSchema = z.strictObject({
     nome: z.string().trim().min(1, "Informe o nome.").max(200),
     descricao: z.string().trim().min(1, "Informe a descrição.").nullable().optional(),
     numeroExibicao: z.number().int().min(1).max(2147483647).nullable().optional(),
@@ -49,14 +51,38 @@ export const createPatrimonioSchema = z.strictObject({
     categoriaId: z.uuid("Informe uma categoria válida."),
     historia: z.string().trim().min(1, "Informe uma história válida.").nullable().optional(),
     importanciaCultural: z.string().trim().min(1, "Informe uma importância cultural válida.").nullable().optional(),
+    categoriasAdicionais: z.array(z.uuid("Informe categorias adicionais válidas.")).max(6, "Informe no máximo 6 categorias adicionais.").optional(),
     situacao: z.enum(Object.values(SituacaoPatrimonio)).default(SituacaoPatrimonio.NAO_INFORMADO),
     localizacao: localizacaoSchema.optional(),
     secoes: orderedArray(sectionSchema),
     fatos: orderedArray(factSchema),
     ligacoes: orderedArray(linkSchema),
-}).superRefine((data, context) => {
+});
+
+function validateLinks(data, context) {
     const ids = (data.ligacoes ?? []).map((l) => l.patrimonioDestinoId);
     if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", path: ["ligacoes"], message: "O destino não pode se repetir." });
+}
+
+export const createPatrimonioSchema = createPatrimonioFieldsSchema.superRefine((dados, context) => {
+    validateLinks(dados, context);
+    const adicionais = dados.categoriasAdicionais ?? [];
+
+    if (new Set(adicionais).size !== adicionais.length) {
+        context.addIssue({
+            code: "custom",
+            path: ["categoriasAdicionais"],
+            message: "Não repita categorias adicionais.",
+        });
+    }
+
+    if (adicionais.includes(dados.categoriaId)) {
+        context.addIssue({
+            code: "custom",
+            path: ["categoriasAdicionais"],
+            message: "A categoria principal não deve estar entre as adicionais.",
+        });
+    }
 });
 
 const queryText = (max, message) => z.string().trim().min(1, message).max(max).optional();
@@ -74,3 +100,28 @@ export const patrimonioSlugParamsSchema = z.strictObject({
     slug: z.string().trim().min(1).max(220)
         .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Informe um slug válido."),
 });
+
+export const adminListPatrimoniosQuerySchema = listPatrimoniosQuerySchema.extend({
+    status: z.enum(Object.values(StatusPublicacao)).optional(),
+});
+
+export const patrimonioIdParamsSchema = z.strictObject({ id: z.uuid() });
+
+const nonEmpty = (data) => Object.keys(data).length > 0;
+export const updatePatrimonioSchema = createPatrimonioFieldsSchema.partial().extend({
+    situacao: z.enum(Object.values(SituacaoPatrimonio)).optional(),
+    localizacao: localizacaoFieldsSchema.partial().extend({
+        cidade: localizacaoFieldsSchema.shape.cidade.removeDefault().optional(),
+        uf: localizacaoFieldsSchema.shape.uf.removeDefault().optional(),
+    }).refine(nonEmpty, "Informe algum campo da localização.").optional(),
+}).refine(nonEmpty, "Informe algum campo para atualizar.").superRefine((dados, context) => {
+    validateLinks(dados, context);
+    if (dados.categoriasAdicionais && new Set(dados.categoriasAdicionais).size !== dados.categoriasAdicionais.length) {
+        context.addIssue({ code: "custom", path: ["categoriasAdicionais"], message: "Não repita categorias adicionais." });
+    }
+    if (dados.categoriasAdicionais?.includes(dados.categoriaId)) {
+        context.addIssue({ code: "custom", path: ["categoriasAdicionais"], message: "A categoria principal não deve estar entre as adicionais." });
+    }
+});
+
+export const statusPatrimonioSchema = z.strictObject({}).optional();

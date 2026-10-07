@@ -98,12 +98,19 @@ test("consulta apenas patrimônios publicados com filtros e paginação", async 
         assert.deepEqual(countArguments.where, findManyArguments.where);
         assert.equal(findManyArguments.where.status, "PUBLICADO");
         assert.deepEqual(findManyArguments.where.situacao, "PRESERVADO");
-        assert.deepEqual(findManyArguments.where.categoria, {
-            OR: [
+        const categoriaFilter = { OR: [
                 { nome: { equals: "Religioso", mode: "insensitive" } },
                 { slug: { equals: "Religioso", mode: "insensitive" } },
-            ],
-        });
+        ] };
+        // categoria casa com a principal OU com uma adicional (dentro de AND, para não colidir com o OR da busca)
+        assert.deepEqual(findManyArguments.where.AND[0].OR, [
+            { categoria: categoriaFilter },
+            {
+                categoriasAdicionais: {
+                    some: { categoria: categoriaFilter },
+                },
+            },
+        ]);
         assert.deepEqual(findManyArguments.where.localizacao, {
             is: { bairro: { equals: "Centro", mode: "insensitive" } },
         });
@@ -139,6 +146,12 @@ test("consulta detalhe público por slug e oculta registros não encontrados", a
             slug: "igreja-matriz",
             status: "PUBLICADO",
         });
+        assert.deepEqual(findFirstArguments.select.ligacoes.where, { destino: { status: "PUBLICADO" } });
+        for (const field of ["secoes", "fatos", "ligacoes"]) {
+            assert.deepEqual(findFirstArguments.select[field].orderBy, { ordem: "asc" });
+            assert.deepEqual(patrimonio[field], []);
+        }
+        assert.ok(findFirstArguments.select.categoriasAdicionais);
 
         prisma.patrimonio.findFirst = async () => null;
         await assert.rejects(
@@ -321,6 +334,10 @@ test("prepara patrimônio e localização para criação atômica como rascunho"
         assert.equal(createArguments.include.categoria, true);
         assert.equal(createArguments.include.localizacao, true);
         assert.deepEqual(createArguments.include.secoes, { orderBy: { ordem: "asc" } });
+        assert.deepEqual(createArguments.include.fatos, { orderBy: { ordem: "asc" } });
+        assert.deepEqual(createArguments.include.ligacoes, { orderBy: { ordem: "asc" } });
+        assert.deepEqual(createArguments.include.categoriasAdicionais, { include: { categoria: true } });
+        assert.equal("categoriasAdicionais" in createArguments.data, false);
         assert.equal("updatedBy" in createArguments.data, false);
     } finally {
         prisma.$transaction = originalTransaction;
@@ -442,4 +459,130 @@ test("ADMIN e EDITOR podem cadastrar patrimônio pela rota protegida", async () 
         prisma.user.findUnique = originalFindUnique;
         prisma.$transaction = originalTransaction;
     }
+});
+
+test("valida categorias adicionais no cadastro de patrimônio", () => {
+    const base = {
+        nome: "Estação",
+        descricao: "Descrição",
+        descricaoResumida: "Resumo",
+        categoriaId: randomUUID(),
+    };
+    const outra = randomUUID();
+
+    assert.equal(createPatrimonioSchema.safeParse({ ...base, categoriasAdicionais: [outra] }).success, true);
+    assert.equal(createPatrimonioSchema.safeParse(base).success, true);
+
+    for (const categoriasAdicionais of [
+        [base.categoriaId],
+        [outra, outra],
+        ["nao-e-uuid"],
+        Array.from({ length: 7 }, () => randomUUID()),
+    ]) {
+        assert.equal(createPatrimonioSchema.safeParse({ ...base, categoriasAdicionais }).success, false);
+    }
+});
+
+test("cria patrimônio com categorias adicionais e rejeita adicional inexistente", async () => {
+    const categoriaId = randomUUID();
+    const adicional = randomUUID();
+    const originalTransaction = prisma.$transaction;
+    let createArguments;
+    let encontradas = [{ id: adicional }];
+
+    prisma.$transaction = async (callback) => callback({
+        categoria: {
+            findUnique: async () => ({ id: categoriaId }),
+            findMany: async () => encontradas,
+        },
+        patrimonio: {
+            findUnique: async () => null,
+            create: async (args) => {
+                createArguments = args;
+                return {
+                    id: randomUUID(),
+                    ...args.data,
+                    categoriasAdicionais: [{ categoria: { id: adicional, nome: "Histórico", slug: "historico" } }],
+                };
+            },
+        },
+    });
+
+    try {
+        const dados = {
+            nome: "Estação",
+            descricao: "Descrição",
+            descricaoResumida: "Resumo",
+            categoriaId,
+            categoriasAdicionais: [adicional, adicional, categoriaId],
+        };
+
+        const criado = await createPatrimonio(dados, randomUUID());
+        assert.deepEqual(createArguments.data.categoriasAdicionais, {
+            create: [{ categoriaId: adicional }],
+        });
+        assert.deepEqual(criado.categoriasAdicionais, [{ id: adicional, nome: "Histórico", slug: "historico" }]);
+
+        encontradas = [];
+        await assert.rejects(() => createPatrimonio(dados, randomUUID()), { code: "CATEGORIA_NOT_FOUND" });
+    } finally {
+        prisma.$transaction = originalTransaction;
+    }
+});
+
+test("lista achata as categorias adicionais", async () => {
+    const originalCount = prisma.patrimonio.count;
+    const originalFindMany = prisma.patrimonio.findMany;
+    prisma.patrimonio.count = async () => 1;
+    prisma.patrimonio.findMany = async () => [{
+        id: randomUUID(),
+        nome: "Estação",
+        categoriasAdicionais: [{ categoria: { id: "1", nome: "Arquitetônico", slug: "arquitetonico" } }],
+    }];
+
+    try {
+        const resultado = await listPatrimonios({ pagina: 1, limite: 20 });
+        assert.deepEqual(resultado.itens[0].categoriasAdicionais, [
+            { id: "1", nome: "Arquitetônico", slug: "arquitetonico" },
+        ]);
+    } finally {
+        prisma.patrimonio.count = originalCount;
+        prisma.patrimonio.findMany = originalFindMany;
+    }
+});
+
+test("cadastro combina pesquisa, categorias e textos legados opcionais ou nulos", async (t) => {
+    const categoriaId = randomUUID(), adicional = randomUUID(), destino = randomUUID();
+    const base = { nome: "Pesquisa", descricaoResumida: "Resumo", categoriaId,
+        numeroExibicao: 34, ordemExibicao: 33, categoriasAdicionais: [adicional],
+        secoes: [{ icone: null, titulo: "História", texto: "Texto", ordem: 0 }],
+        fatos: [{ rotulo: "Ano", valor: "1900", ordem: 0 }],
+        ligacoes: [{ patrimonioDestinoId: destino, texto: "Veja também", ordem: 0 }] };
+    assert.equal(createPatrimonioSchema.safeParse(base).success, true);
+    const dados = createPatrimonioSchema.parse({ ...base, descricao: null, historia: null, importanciaCultural: null });
+    let args, existentes = [{ id: destino }];
+    const original = prisma.$transaction;
+    t.after(() => { prisma.$transaction = original; });
+    prisma.$transaction = async (fn) => fn({
+        categoria: { findUnique: async () => ({ id: categoriaId }), findMany: async () => [{ id: adicional }] },
+        patrimonio: {
+            findUnique: async () => null, findMany: async () => existentes,
+            create: async (input) => {
+                args = input;
+                return { ...dados, categoriasAdicionais: [{ categoria: { id: adicional } }] };
+            },
+        },
+    });
+    const result = await createPatrimonio(dados, randomUUID());
+    for (const field of ["secoes", "fatos", "ligacoes"]) {
+        assert.deepEqual(args.data[field], { create: dados[field] });
+        assert.deepEqual(result[field], dados[field]);
+    }
+    assert.equal(args.data.numeroExibicao, 34);
+    assert.equal(args.data.ordemExibicao, 33);
+    assert.equal(args.data.descricao, null);
+    assert.deepEqual(args.data.categoriasAdicionais, { create: [{ categoriaId: adicional }] });
+    assert.deepEqual(result.categoriasAdicionais, [{ id: adicional }]);
+    existentes = [];
+    await assert.rejects(createPatrimonio(dados, randomUUID()), { code: "LIGACAO_DESTINO_NOT_FOUND" });
 });

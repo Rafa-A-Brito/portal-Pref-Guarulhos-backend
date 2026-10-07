@@ -57,6 +57,7 @@ model Categoria {
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   patrimonios Patrimonio[]
+  adicionaisEm PatrimonioCategoria[]
 
   @@map("categoria")
 }
@@ -87,6 +88,7 @@ model Patrimonio {
   localizacao       Localizacao?
   imagens           PatrimonioImagem[]
   documentos        PatrimonioDocumento[]
+  categoriasAdicionais PatrimonioCategoria[]
   rotas             RotaPatrimonio[]
   secoes            PatrimonioSecao[]
   fatos             PatrimonioFato[]
@@ -234,4 +236,18 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([createdAt])
   @@map("audit_log")
+}
+
+// Categorias ADICIONAIS de um patrimônio. A categoria principal continua em
+// patrimonio.categoria_id (obrigatória); aqui ficam as demais, para que o bem
+// também apareça nos filtros dessas categorias.
+model PatrimonioCategoria {
+  patrimonioId String     @map("patrimonio_id") @db.Uuid
+  categoriaId  String     @map("categoria_id") @db.Uuid
+  patrimonio   Patrimonio @relation(fields: [patrimonioId], references: [id], onDelete: Cascade)
+  categoria    Categoria  @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+
+  @@id([patrimonioId, categoriaId])
+  @@index([categoriaId])
+  @@map("patrimonio_categoria")
 }

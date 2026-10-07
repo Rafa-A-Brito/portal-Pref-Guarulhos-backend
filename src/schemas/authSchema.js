@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { passwordSchema } from "./adminSchema.js";
 
 export const loginSchema = z.strictObject({
     email: z.string().trim().pipe(z.email("Informe um e-mail válido.").max(254))
@@ -7,4 +8,9 @@ export const loginSchema = z.strictObject({
         (value) => Buffer.byteLength(value, "utf8") <= 72,
         "A senha deve ter no máximo 72 bytes em UTF-8."
     ),
+});
+
+export const changePasswordSchema = z.strictObject({
+    senhaAtual: loginSchema.shape.password,
+    novaSenha: passwordSchema,
 });
