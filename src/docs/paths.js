@@ -11,6 +11,8 @@ const badRequest = error("Dados inválidos (incluindo JSON inválido).", "BAD_RE
 const unauthorized = error("Token ausente, inválido, expirado ou conta inativa.", "UNAUTHORIZED", "Autenticação necessária.");
 const forbidden = error("Papel sem permissão.", "FORBIDDEN", "Você não possui permissão para realizar esta ação.");
 const tooLarge = error("Corpo JSON acima de 100 kb.", "INTERNAL_ERROR", "Corpo da requisição muito grande.");
+const fileTooLarge = error("Arquivo acima do limite (5 MB para imagens, 10 MB para PDFs).", "FILE_TOO_LARGE", "Arquivo excede o tamanho máximo permitido.");
+const unsupportedMedia = error("Formato não suportado ou conteúdo diferente do declarado.", "UNSUPPORTED_MEDIA_TYPE", "O conteúdo do arquivo não corresponde a um formato suportado.");
 const internal = error("Falha inesperada, inclusive falha de acesso ao banco.", "INTERNAL_ERROR", "Erro interno do servidor.");
 const body = (name, example) => ({ required: true, content: { "application/json": { schema: schema(name), example } } });
 const bearerAuth = [{ bearerAuth: [] }];
@@ -156,3 +158,115 @@ for (const [action, summary, description] of [
         requestBody: { required: false, content: { "application/json": { schema: { type: "object", additionalProperties: false }, example: {} } } },
     } };
 }
+
+const uploadBody = (name, example) => ({
+    required: true,
+    content: { "multipart/form-data": { schema: schema(name), example } },
+});
+const imagemPathParameter = { in: "path", name: "imagemId", required: true, schema: { type: "string", format: "uuid" }, example: imagemId, description: "UUID da imagem, tratado como texto." };
+const documentoId = "66666666-6666-4666-8666-666666666666";
+const documentoPathParameter = { in: "path", name: "documentoId", required: true, schema: { type: "string", format: "uuid" }, example: documentoId, description: "UUID do documento, tratado como texto." };
+const arquivoPathParameters = [
+    { in: "path", name: "tipo", required: true, schema: { type: "string", enum: ["imagens", "documentos"] }, example: "imagens" },
+    { in: "path", name: "arquivo", required: true, schema: { type: "string", pattern: "^[0-9a-f-]+\\.[a-z0-9]+$" }, example: "9f1c2f7a-6c5b-4a3e-9d10-2b8f0c7e4a11.jpg", description: "Nome gerado pela API." },
+];
+const arquivoPublicoResponses = {
+    200: { description: "Conteúdo binário do arquivo.", content: { "image/jpeg": { schema: { type: "string", format: "binary" } }, "image/png": { schema: { type: "string", format: "binary" } }, "image/webp": { schema: { type: "string", format: "binary" } }, "application/pdf": { schema: { type: "string", format: "binary" } } } },
+    400: badRequest,
+    401: error("Mídia de patrimônio não publicado sem autenticação válida.", "UNAUTHORIZED", "Mídia disponível apenas para usuários autenticados."),
+    404: error("Arquivo ou registro de mídia inexistente.", "NOT_FOUND", "Arquivo não encontrado."),
+    500: internal,
+};
+
+const listaMidiaDescricao = "Identificadores são UUIDs em texto. O patrimônio é conferido antes do processamento e a mídia precisa pertencer a ele. EDITOR atua em rascunhos; ADMIN em qualquer status. Metadados textuais recebem trim; ordem, principal e datas são convertidos de texto conforme o schema.";
+
+paths["/api/admin/patrimonios/{id}/imagens"] = {
+    post: {
+        tags: ["Mídias administrativas"], summary: "Envia uma imagem e associa ao patrimônio",
+        description: `${listaMidiaDescricao} O arquivo vai no campo arquivo e os metadados em multipart/form-data. A url é gerada após salvar o arquivo e o conteúdo real é validado pela assinatura, não pela extensão. Marcar principal desmarca a anterior na mesma transação.`,
+        security: bearerAuth, parameters: [idParameter],
+        requestBody: uploadBody("ImagemUpload", { textoAlternativo: "Fachada da edificação", ordem: "0", principal: "true" }),
+        responses: {
+            201: response("Imagem cadastrada.", "ImagemMidiaResponse"),
+            400: badRequest, 401: unauthorized, 403: forbidden,
+            404: error("Patrimônio inexistente.", "PATRIMONIO_NOT_FOUND", "Patrimônio não encontrado."),
+            413: fileTooLarge, 415: unsupportedMedia, 500: internal,
+        },
+    },
+};
+
+paths["/api/admin/patrimonios/{id}/imagens/{imagemId}"] = {
+    patch: {
+        tags: ["Mídias administrativas"], summary: "Edita metadados de uma imagem",
+        description: `${listaMidiaDescricao} Altera apenas metadados; para trocar o arquivo, cadastre o novo e remova o antigo. Recusa corpo vazio, campos desconhecidos e a url. Marcar principal desmarca a anterior na mesma transação.`,
+        security: bearerAuth, parameters: [idParameter, imagemPathParameter],
+        requestBody: body("ImagemPatch", { titulo: "Fachada reformada", ordem: 1 }),
+        responses: {
+            200: response("Imagem atualizada.", "ImagemMidiaResponse"),
+            400: badRequest, 401: unauthorized, 403: forbidden,
+            404: error("Patrimônio ou imagem inexistente, ou imagem de outro patrimônio.", "IMAGEM_NOT_FOUND", "Imagem não encontrada."),
+            413: tooLarge, 500: internal,
+        },
+    },
+    delete: {
+        tags: ["Mídias administrativas"], summary: "Remove uma imagem do patrimônio",
+        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. URLs externas nunca são apagadas. Se a remoção física falhar, a resposta traz um aviso e a operação pode ser repetida.`,
+        security: bearerAuth, parameters: [idParameter, imagemPathParameter],
+        responses: {
+            200: response("Imagem removida.", "ImagemMidiaResponse"),
+            400: badRequest, 401: unauthorized, 403: forbidden,
+            404: error("Patrimônio ou imagem inexistente, ou imagem de outro patrimônio.", "IMAGEM_NOT_FOUND", "Imagem não encontrada."),
+            500: internal,
+        },
+    },
+};
+
+paths["/api/admin/patrimonios/{id}/documentos"] = {
+    post: {
+        tags: ["Mídias administrativas"], summary: "Envia um documento PDF e associa ao patrimônio",
+        description: `${listaMidiaDescricao} O arquivo vai no campo arquivo. titulo e tipo são obrigatórios; a url é gerada e o mimeType é determinado a partir do conteúdo validado (application/pdf).`,
+        security: bearerAuth, parameters: [idParameter],
+        requestBody: uploadBody("DocumentoUpload", { titulo: "Inventário do imóvel", tipo: "inventario", dataDocumento: "2026-01-02" }),
+        responses: {
+            201: response("Documento cadastrado.", "DocumentoMidiaResponse"),
+            400: badRequest, 401: unauthorized, 403: forbidden,
+            404: error("Patrimônio inexistente.", "PATRIMONIO_NOT_FOUND", "Patrimônio não encontrado."),
+            413: fileTooLarge, 415: unsupportedMedia, 500: internal,
+        },
+    },
+};
+
+paths["/api/admin/patrimonios/{id}/documentos/{documentoId}"] = {
+    patch: {
+        tags: ["Mídias administrativas"], summary: "Edita metadados de um documento",
+        description: `${listaMidiaDescricao} Altera apenas metadados; para trocar o arquivo, cadastre o novo e remova o antigo. Recusa corpo vazio, campos desconhecidos, a url e o mimeType.`,
+        security: bearerAuth, parameters: [idParameter, documentoPathParameter],
+        requestBody: body("DocumentoPatch", { titulo: "Inventário revisado", dataDocumento: "2026-02-10" }),
+        responses: {
+            200: response("Documento atualizado.", "DocumentoMidiaResponse"),
+            400: badRequest, 401: unauthorized, 403: forbidden,
+            404: error("Patrimônio ou documento inexistente, ou documento de outro patrimônio.", "DOCUMENTO_NOT_FOUND", "Documento não encontrado."),
+            413: tooLarge, 500: internal,
+        },
+    },
+    delete: {
+        tags: ["Mídias administrativas"], summary: "Remove um documento do patrimônio",
+        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. Se a remoção física falhar, a resposta traz um aviso e a operação pode ser repetida.`,
+        security: bearerAuth, parameters: [idParameter, documentoPathParameter],
+        responses: {
+            200: response("Documento removido.", "DocumentoMidiaResponse"),
+            400: badRequest, 401: unauthorized, 403: forbidden,
+            404: error("Patrimônio ou documento inexistente, ou documento de outro patrimônio.", "DOCUMENTO_NOT_FOUND", "Documento não encontrado."),
+            500: internal,
+        },
+    },
+};
+
+paths["/api/uploads/{tipo}/{arquivo}"] = {
+    get: {
+        tags: ["Mídias públicas"], summary: "Entrega uma mídia cadastrada",
+        description: "Mídias de patrimônios PUBLICADOS são públicas. Arquivos de rascunhos e arquivados exigem token de ADMIN ou EDITOR. Os arquivos ficam na pasta UPLOAD_ROOT (backup) e a URL nunca expõe caminhos absolutos do servidor. A pasta uploads não é versionada no Git.",
+        parameters: arquivoPathParameters,
+        responses: arquivoPublicoResponses,
+    },
+};

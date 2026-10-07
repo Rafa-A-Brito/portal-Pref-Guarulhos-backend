@@ -147,6 +147,78 @@ schemas.PatrimonioAdminListaResponse = {
     } },
 };
 
+// --- Mídias (envio e gerenciamento) ---
+
+schemas.ImagemUpload = {
+    type: "object", additionalProperties: false, required: ["arquivo", "textoAlternativo"],
+    description: "Envio em multipart/form-data. url é gerada pela API e não é aceita no corpo.",
+    properties: {
+        arquivo: string("JPEG, PNG ou WebP até 5 MB. O conteúdo é validado pela assinatura do arquivo.", { type: "string", format: "binary" }),
+        textoAlternativo: string("Obrigatório.", { minLength: 1, maxLength: 300, example: "Fachada da edificação" }),
+        titulo: string("Título com trim.", { minLength: 1, maxLength: 200 }),
+        credito: string("Crédito com trim.", { minLength: 1, maxLength: 200 }),
+        fonte: string("Fonte com trim.", { minLength: 1, maxLength: 500 }),
+        ordem: { type: "integer", minimum: 0, default: 0, description: "Texto convertido para inteiro não negativo." },
+        principal: { type: "boolean", default: false, description: "Aceita true/false/1/0 como texto. Marcar desmarca a principal anterior." },
+    },
+};
+
+schemas.DocumentoUpload = {
+    type: "object", additionalProperties: false, required: ["arquivo", "titulo", "tipo"],
+    description: "Envio em multipart/form-data. url e mimeType são gerados pela API e não são aceitos no corpo.",
+    properties: {
+        arquivo: string("PDF até 10 MB. O conteúdo é validado pela assinatura do arquivo.", { type: "string", format: "binary" }),
+        titulo: string("Obrigatório.", { minLength: 1, maxLength: 200, example: "Inventário do imóvel" }),
+        tipo: string("Obrigatório.", { minLength: 1, maxLength: 100, example: "inventario" }),
+        descricao: string("Descrição com trim.", { minLength: 1 }),
+        fonte: string("Fonte com trim.", { minLength: 1, maxLength: 500 }),
+        dataDocumento: { type: "string", format: "date", description: "Data ISO (AAAA-MM-DD), convertida para Date.", example: "2026-01-02" },
+    },
+};
+
+schemas.ImagemMidia = {
+    type: "object", required: ["id", "patrimonioId", "url", "textoAlternativo", "ordem", "principal"],
+    properties: {
+        id: string("UUID", { format: "uuid" }), patrimonioId: string("UUID", { format: "uuid" }),
+        url: string("URL gerada pela API; use /uploads/imagens/<arquivo>."),
+        titulo: nullable({ type: "string" }), textoAlternativo: { type: "string" },
+        credito: nullable({ type: "string" }), fonte: nullable({ type: "string" }),
+        ordem: { type: "integer", minimum: 0 }, principal: { type: "boolean" },
+    },
+};
+
+schemas.DocumentoMidia = {
+    type: "object", required: ["id", "patrimonioId", "titulo", "tipo", "url", "mimeType"],
+    properties: {
+        id: string("UUID", { format: "uuid" }), patrimonioId: string("UUID", { format: "uuid" }),
+        titulo: { type: "string" }, tipo: { type: "string" }, url: string("URL gerada pela API."),
+        descricao: nullable({ type: "string" }), fonte: nullable({ type: "string" }),
+        dataDocumento: nullable(string("Data ISO 8601", { format: "date-time" })),
+        mimeType: string("Determinado a partir do conteúdo validado.", { example: "application/pdf" }),
+    },
+};
+
+schemas.ImagemMidiaResponse = { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: ref("ImagemMidia") } };
+schemas.DocumentoMidiaResponse = { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: ref("DocumentoMidia") } };
+
+schemas.ImagemPatch = (() => {
+    const { arquivo, ...metadados } = schemas.ImagemUpload.properties;
+    return {
+        type: "object", additionalProperties: false, minProperties: 1,
+        description: "Atualização parcial de metadados. Não troca o arquivo: para isso cadastre o novo e remova o antigo.",
+        properties: metadados,
+    };
+})();
+
+schemas.DocumentoPatch = (() => {
+    const { arquivo, ...metadados } = schemas.DocumentoUpload.properties;
+    return {
+        type: "object", additionalProperties: false, minProperties: 1,
+        description: "Atualização parcial de metadados. Não troca o arquivo: para isso cadastre o novo e remova o antigo.",
+        properties: metadados,
+    };
+})();
+
 for (const name of ["PatrimonioResumo", "PatrimonioDetalhe", "PatrimonioCriado", "PatrimonioAdminResumo", "PatrimonioAdmin"]) {
     schemas[name].properties.categoriasAdicionais = { type: "array", items: ref("CategoriaResumo") };
     schemas[name].required.push("categoriasAdicionais");

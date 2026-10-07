@@ -17,11 +17,18 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
         "GET /api/admin/patrimonios", "GET /api/admin/patrimonios/{id}",
         "PATCH /api/admin/patrimonios/{id}", "PATCH /api/admin/patrimonios/{id}/publicar",
         "PATCH /api/admin/patrimonios/{id}/arquivar",
+        "POST /api/admin/patrimonios/{id}/imagens", "PATCH /api/admin/patrimonios/{id}/imagens/{imagemId}",
+        "DELETE /api/admin/patrimonios/{id}/imagens/{imagemId}",
+        "POST /api/admin/patrimonios/{id}/documentos", "PATCH /api/admin/patrimonios/{id}/documentos/{documentoId}",
+        "DELETE /api/admin/patrimonios/{id}/documentos/{documentoId}",
+        "GET /api/uploads/{tipo}/{arquivo}",
     ].sort());
 
     for (const [path, methods] of Object.entries(openapi.paths)) {
         for (const operation of Object.values(methods)) {
-            assert.equal(Boolean(operation.security), path === "/api/admins" || path === "/api/auth/senha" || path.startsWith("/api/admin/patrimonios"));
+            // A rota de arquivos é pública para mídias de patrimônios publicados
+            // e usa autenticação opcional para as demais.
+            assert.equal(Boolean(operation.security), path !== "/api" && path !== "/api/health" && path !== "/api/docs" && path !== "/api/docs.json" && path !== "/api/auth/login" && path !== "/api/patrimonios" && path !== "/api/patrimonios/{slug}" && path !== "/api/uploads/{tipo}/{arquivo}");
         }
     }
     assert.equal(openapi.components.schemas.AdminRequest.properties.password.writeOnly, true);
