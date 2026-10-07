@@ -6,11 +6,15 @@ import openapi from "./docs/openapi.js";
 import routes from "./routes/index.js";
 import notFoundHandler from "./middlewares/notFoundHandler.js";
 import errorHandler from "./middlewares/errorHandler.js";
+import { PATRIMONIOS_IMAGE_DIR, PATRIMONIOS_IMAGE_ROUTE } from "./config/arquivos.js";
 
 const app = express();
 
 app.use(cors({ origin: env.CORS_ORIGIN }));
 app.use(express.json({ limit: "100kb" }));
+app.use(PATRIMONIOS_IMAGE_ROUTE, express.static(PATRIMONIOS_IMAGE_DIR, {
+    dotfiles: "deny", index: false, redirect: false, fallthrough: false,
+}));
 app.get("/api/docs.json", (_req, res) => res.json(openapi));
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapi, { swaggerOptions: { persistAuthorization: false } }));
 app.use("/api", routes);

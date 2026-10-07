@@ -29,6 +29,21 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     assert.equal(openapi.components.schemas.ChangePasswordRequest.properties.novaSenha.writeOnly, true);
     assert.equal(JSON.stringify(openapi).includes("passwordHash"), false);
     assert.equal(openapi.components.schemas.PatrimonioResumo.properties.imagens.maxItems, 1);
+    assert.equal(openapi.components.schemas.PatrimonioRequest.required.includes("descricao"), false);
+    assert.equal(openapi.components.schemas.PatrimonioDetalhe.properties.descricao.nullable, true);
+    for (const name of ["Secao", "Fato", "Ligacao"]) assert.ok(openapi.components.schemas[name].properties.id);
+    for (const name of ["PatrimonioRequest", "PatrimonioPatch"]) {
+        const fields = openapi.components.schemas[name].properties;
+        assert.equal(fields.categoriasAdicionais.maxItems, 6);
+        assert.equal(fields.categoriasAdicionais.uniqueItems, true);
+        for (const field of ["secoes", "fatos", "ligacoes", "numeroExibicao", "ordemExibicao"]) assert.ok(fields[field]);
+        for (const field of ["descricao", "historia", "importanciaCultural"]) assert.equal(fields[field].nullable, true);
+    }
+    for (const name of ["PatrimonioResumo", "PatrimonioDetalhe", "PatrimonioCriado", "PatrimonioAdminResumo", "PatrimonioAdmin"]) {
+        const contract = openapi.components.schemas[name];
+        assert.equal(new Set(contract.required).size, contract.required.length, name);
+        assert.ok(contract.properties.categoriasAdicionais);
+    }
 });
 
 test("Swagger UI e JSON respondem sem consultar o banco", async () => {

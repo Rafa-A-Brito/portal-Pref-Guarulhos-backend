@@ -24,7 +24,7 @@ const localId = "55555555-5555-4555-8555-555555555555";
 const categoria = { id: categoriaId, nome: "Histórico", slug: "historico" };
 const localizacao = { id: localId, patrimonioId, endereco: "Rua Exemplo", numero: "10", complemento: null, bairro: "Centro", cidade: "Guarulhos", uf: "SP", cep: "07010-000", latitude: "-23.4628000", longitude: "-46.5333000" };
 const imagem = { id: imagemId, url: "https://example.org/imagem.jpg", titulo: null, textoAlternativo: "Fachada da edificação", principal: true };
-const resumo = { id: patrimonioId, nome: "Casa da Cultura Exemplo", slug: "casa-da-cultura-exemplo", descricaoResumida: "Edificação histórica em Guarulhos.", situacao: "PRESERVADO", publicadoEm: "2026-09-01T12:00:00.000Z", categoria, localizacao, imagens: [imagem] };
+const resumo = { numeroExibicao: 1, ordemExibicao: 0, id: patrimonioId, nome: "Casa da Cultura Exemplo", slug: "casa-da-cultura-exemplo", descricaoResumida: "Edificação histórica em Guarulhos.", situacao: "PRESERVADO", publicadoEm: "2026-09-01T12:00:00.000Z", categoria, categoriasAdicionais: [], localizacao, imagens: [imagem] };
 
 export const paths = {
     "/api": {
@@ -70,10 +70,10 @@ export const paths = {
     },
     "/api/patrimonios": {
         get: {
-            tags: ["Patrimônios públicos"], summary: "Lista patrimônios publicados", description: "Retorna apenas status PUBLICADO, ordenados por nome e ID. A busca procura nos campos nome, descrição resumida, descrição, história e importância cultural, sem diferenciar maiúsculas/minúsculas. Categoria e bairro usam correspondência exata, também sem diferenciar maiúsculas/minúsculas.",
+            tags: ["Patrimônios públicos"], summary: "Lista patrimônios publicados", description: "Retorna apenas status PUBLICADO, ordenados por ordemExibicao (nulos por último), nome e ID. A busca procura nos campos nome, descrição resumida, descrição, história e importância cultural legadas, além dos títulos e textos de secoes, sem diferenciar maiúsculas/minúsculas. Categoria e bairro usam correspondência exata, também sem diferenciar maiúsculas/minúsculas.",
             parameters: [
                 { in: "query", name: "busca", schema: { type: "string", minLength: 1, maxLength: 200 }, description: "Termo de busca; recebe trim." },
-                { in: "query", name: "categoria", schema: { type: "string", minLength: 1, maxLength: 100 }, description: "Nome exato da categoria (não UUID); recebe trim.", example: "Histórico" },
+                { in: "query", name: "categoria", schema: { type: "string", minLength: 1, maxLength: 100 }, description: "Nome ou slug exato da categoria principal ou adicional (não UUID); recebe trim. Combinado com busca usando AND.", example: "Histórico" },
                 { in: "query", name: "situacao", schema: schema("Situacao"), description: "Situação atual do patrimônio." },
                 { in: "query", name: "bairro", schema: { type: "string", minLength: 1, maxLength: 100 }, description: "Nome exato do bairro; recebe trim." },
                 { in: "query", name: "pagina", schema: { type: "integer", minimum: 1, default: 1 }, description: "Página, convertida de texto para número." },
@@ -87,24 +87,24 @@ export const paths = {
     },
     "/api/patrimonios/{slug}": {
         get: {
-            tags: ["Patrimônios públicos"], summary: "Consulta patrimônio publicado pelo slug", description: "O identificador da URL é o slug, não um UUID. Patrimônios não publicados também retornam 404. Rotas relacionadas são incluídas somente quando publicadas.",
+            tags: ["Patrimônios públicos"], summary: "Consulta patrimônio publicado pelo slug", description: "O identificador da URL é o slug, não um UUID. Patrimônios não publicados também retornam 404. Seções, fatos e ligações são ordenados por ordem. Ligações incluem somente destinos publicados. Campos legados permanecem opcionais durante a transição. Rotas relacionadas são incluídas somente quando publicadas.",
             parameters: [{ in: "path", name: "slug", required: true, schema: { type: "string", minLength: 1, maxLength: 220, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }, example: "casa-da-cultura-exemplo" }],
             responses: {
-                200: response("Detalhes do patrimônio.", "PatrimonioDetalheResponse", { success: true, data: { ...resumo, descricao: "Edificação de interesse cultural.", historia: null, importanciaCultural: null, updatedAt: "2026-09-01T12:00:00.000Z", categoria: { ...categoria, descricao: null }, imagens: [{ ...imagem, credito: null, fonte: null, ordem: 0 }], documentos: [], rotas: [] } }),
+                200: response("Detalhes do patrimônio.", "PatrimonioDetalheResponse", { success: true, data: { ...resumo, descricao: "Edificação de interesse cultural.", historia: null, importanciaCultural: null, updatedAt: "2026-09-01T12:00:00.000Z", categoria: { ...categoria, descricao: null }, imagens: [{ ...imagem, credito: null, fonte: null, ordem: 0 }], secoes: [], fatos: [], ligacoes: [], documentos: [], rotas: [] } }),
                 400: badRequest, 404: error("Slug não encontrado ou patrimônio não publicado.", "PATRIMONIO_NOT_FOUND", "Patrimônio não encontrado."), 500: internal,
             },
         },
     },
     "/api/admin/patrimonios": {
         post: {
-            tags: ["Patrimônios administrativos"], summary: "Cria um patrimônio em rascunho", description: "Disponível para ADMIN e EDITOR autenticados. O categoriaId do exemplo pertence à categoria Histórico no banco local de demonstração. Em outro banco, consulte a tabela categoria e substitua o UUID. categoriasAdicionais é opcional, aceita até 6 UUIDs distintos e não pode incluir a categoria principal. O slug é gerado do nome. O status é sempre RASCUNHO, independentemente da situação. Executa uma gravação real no banco configurado.",
+            tags: ["Patrimônios administrativos"], summary: "Cria um patrimônio em rascunho", description: "Disponível para ADMIN e EDITOR autenticados. Categoria e destinos das ligações devem existir. O categoriaId do exemplo pertence à categoria Histórico no banco local de demonstração; em outro banco, substitua o UUID. categoriasAdicionais é opcional, aceita até 6 UUIDs distintos e não pode incluir a categoria principal. Arrays opcionais retornam vazios; ordens são contíguas a partir de zero e destinos não se repetem. Número e ordem do catálogo são opcionais e únicos. descricao, historia e importanciaCultural são legados opcionais ou nulos; a pesquisa completa fica em secoes. O slug é gerado do nome. O status é sempre RASCUNHO, independentemente da situação. Executa uma gravação real no banco configurado.",
             security: bearerAuth,
             requestBody: body("PatrimonioRequest", { nome: "Casa da Cultura Exemplo", descricao: "Edificação de interesse cultural.", descricaoResumida: "Edificação histórica em Guarulhos.", categoriaId, situacao: "PRESERVADO", localizacao: { endereco: "Rua Exemplo", numero: "10", bairro: "Centro", latitude: -23.4628, longitude: -46.5333 } }),
             responses: {
-                201: response("Rascunho criado.", "PatrimonioCriadoResponse", { success: true, data: { id: patrimonioId, nome: resumo.nome, slug: resumo.slug, descricao: "Edificação de interesse cultural.", descricaoResumida: resumo.descricaoResumida, historia: null, importanciaCultural: null, situacao: "PRESERVADO", status: "RASCUNHO", categoriaId, createdBy: usuarioId, updatedBy: null, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z", publicadoEm: null, arquivadoEm: null, categoria: { ...categoria, descricao: null, createdAt: "2026-08-01T12:00:00.000Z", updatedAt: "2026-08-01T12:00:00.000Z" }, localizacao } }),
+                201: response("Rascunho criado.", "PatrimonioCriadoResponse", { success: true, data: { id: patrimonioId, numeroExibicao: null, ordemExibicao: null, secoes: [], fatos: [], ligacoes: [], nome: resumo.nome, slug: resumo.slug, descricao: "Edificação de interesse cultural.", descricaoResumida: resumo.descricaoResumida, historia: null, importanciaCultural: null, situacao: "PRESERVADO", status: "RASCUNHO", categoriaId, createdBy: usuarioId, updatedBy: null, createdAt: "2026-09-01T12:00:00.000Z", updatedAt: "2026-09-01T12:00:00.000Z", publicadoEm: null, arquivadoEm: null, categoria: { ...categoria, descricao: null, createdAt: "2026-08-01T12:00:00.000Z", updatedAt: "2026-08-01T12:00:00.000Z" }, localizacao } }),
                 400: badRequest, 401: unauthorized, 403: forbidden,
-                404: error("Categoria não encontrada.", "CATEGORIA_NOT_FOUND", "Categoria não encontrada."),
-                409: error("Não foi possível obter um slug exclusivo.", "PATRIMONIO_SLUG_CONFLICT", "Já existe um patrimônio com este slug."),
+                404: error("Categoria ou destino de ligação não encontrado (CATEGORIA_NOT_FOUND / LIGACAO_DESTINO_NOT_FOUND).", "CATEGORIA_NOT_FOUND", "Categoria não encontrada."),
+                409: error("Slug, número, ordem ou relação editorial em conflito (PATRIMONIO_SLUG_CONFLICT / PATRIMONIO_EDITORIAL_CONFLICT).", "PATRIMONIO_SLUG_CONFLICT", "Já existe um patrimônio com este slug."),
                 413: tooLarge, 500: internal,
             },
         },
@@ -113,14 +113,14 @@ export const paths = {
 
 const idParameter = { in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" }, example: patrimonioId, description: "UUID do patrimônio, tratado como texto." };
 const adminResponses = {
-    200: response("Dados administrativos com categoria, localização e todas as mídias.", "PatrimonioAdminResponse"),
+    200: response("Dados administrativos com categorias, pesquisa, localização e todas as mídias.", "PatrimonioAdminResponse"),
     400: badRequest, 401: unauthorized, 403: forbidden,
     404: error("Patrimônio inexistente.", "PATRIMONIO_NOT_FOUND", "Patrimônio não encontrado."),
     500: internal,
 };
 paths["/api/admin/patrimonios"].get = {
     tags: ["Patrimônios administrativos"], summary: "Lista patrimônios de todos os status",
-    description: "ADMIN e EDITOR. Reutiliza filtros públicos e ordenação estável por nome e ID. Sem resultados retorna itens vazio. Exemplo: ?status=RASCUNHO&busca=igreja&pagina=1&limite=20.",
+    description: "ADMIN e EDITOR. Reutiliza filtros públicos e ordenação por ordemExibicao (nulos por último), nome e ID. Sem resultados retorna itens vazio. Exemplo: ?status=RASCUNHO&busca=igreja&pagina=1&limite=20.",
     security: bearerAuth,
     parameters: [...paths["/api/patrimonios"].get.parameters, { in: "query", name: "status", schema: schema("StatusPublicacao"), description: "Opcional; omitido retorna todos os status." }],
     responses: { 200: response("Lista administrativa paginada.", "PatrimonioAdminListaResponse"), 400: badRequest, 401: unauthorized, 403: forbidden, 500: internal },
@@ -128,8 +128,8 @@ paths["/api/admin/patrimonios"].get = {
 paths["/api/admin/patrimonios/{id}"] = {
     get: { tags: ["Patrimônios administrativos"], summary: "Consulta detalhes para edição", description: "ADMIN e EDITOR podem consultar qualquer status, incluindo rascunhos e arquivados.", security: bearerAuth, parameters: [idParameter], responses: adminResponses },
     patch: { tags: ["Patrimônios administrativos"], summary: "Edita parcialmente um patrimônio",
-        description: "EDITOR edita somente RASCUNHO; ADMIN edita qualquer status. Preserva campos omitidos e slug, registra updatedBy. Permite substituir categoriasAdicionais por até 6 categorias distintas da principal; envie [] para removê-las. Recusa corpo vazio, campos desconhecidos, status, autoria, IDs do patrimônio, datas e mídias. Categoria inexistente retorna 400. Localização é criada ou atualizada em transação, validando as coordenadas finais.",
-        security: bearerAuth, parameters: [idParameter], requestBody: body("PatrimonioPatch", { nome: "Novo nome", localizacao: { bairro: "Centro" } }), responses: { ...adminResponses, 413: tooLarge },
+        description: "EDITOR edita somente RASCUNHO; ADMIN edita qualquer status. Preserva campos omitidos e slug, registra updatedBy. Permite substituir categoriasAdicionais por até 6 categorias distintas da principal; envie [] para removê-las. secoes, fatos e ligacoes substituem integralmente o respectivo array quando enviados; [] remove seus itens. Valida ordens contíguas e destinos distintos, existentes e diferentes do próprio patrimônio. Número e ordem do catálogo são opcionais, nulos ou únicos. Recusa corpo vazio, campos desconhecidos, status, autoria, IDs do patrimônio, datas e mídias. Categoria ou destino inexistente retorna 400. Localização é criada ou atualizada em transação, validando as coordenadas finais.",
+        security: bearerAuth, parameters: [idParameter], requestBody: body("PatrimonioPatch", { nome: "Novo nome", localizacao: { bairro: "Centro" } }), responses: { ...adminResponses, 409: error("Número, ordem ou relação editorial em conflito.", "PATRIMONIO_EDITORIAL_CONFLICT", "Número, ordem ou relação editorial já utilizada."), 413: tooLarge },
     },
 };
 paths["/api/auth/senha"] = {

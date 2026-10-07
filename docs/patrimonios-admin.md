@@ -23,8 +23,9 @@ O contrato OpenAPI também está disponível em `/api/docs.json` e pode ser impo
    '@ | node --input-type=module
    ```
 4. Consulte `GET /api/admin/patrimonios`, com ou sem `status=RASCUNHO`, `PUBLICADO` ou `ARQUIVADO`.
-   Os filtros `busca`, `categoria` (nome principal ou adicional), `bairro`, `situacao`, `pagina` e `limite` são os mesmos da consulta pública.
-   A paginação começa em 1, usa 20 itens por padrão e aceita até 100. A ordenação é por nome e ID.
+   Os filtros `busca`, `categoria` (nome ou slug da principal ou adicional), `bairro`, `situacao`, `pagina` e `limite` são os mesmos da consulta pública.
+   Categoria e busca são combinadas com AND; a busca inclui os títulos e textos das seções.
+   A paginação começa em 1, usa 20 itens por padrão e aceita até 100. A ordenação é por `ordemExibicao` (nulos por último), nome e ID.
 5. Consulte `GET /api/admin/patrimonios/{id}` para obter dados de edição e mídias em qualquer status.
 6. Edite com `PATCH /api/admin/patrimonios/{id}`, por exemplo:
 
@@ -45,6 +46,15 @@ Campos omitidos e slug são preservados. Se a localização já existe, pode env
 `endereco` e `bairro`; `cidade` e `uf` assumem Guarulhos/SP. O estado final deve conter
 ambas as coordenadas ou nenhuma. Corpos vazios, campos desconhecidos, status, autoria,
 IDs do patrimônio, slug, datas e mídias são recusados. Categoria inexistente na edição retorna 400.
+
+`categoriasAdicionais` aceita até 6 UUIDs distintos, sem repetir a principal.
+`secoes`, `fatos` e `ligacoes` substituem integralmente o respectivo array quando enviados;
+`[]` remove seus itens e campos omitidos são preservados. As ordens devem ser únicas e
+contíguas a partir de zero; destinos das ligações devem existir, não se repetir e ser
+diferentes do próprio patrimônio. `numeroExibicao` e `ordemExibicao` são opcionais/nulos
+e únicos quando preenchidos; conflitos retornam 409. `descricao`, `historia` e
+`importanciaCultural` permanecem opcionais/nulos. A publicação valida também a pesquisa
+e a numeração. A consulta pública retorna ligações somente para destinos publicados.
 
 7. Com ADMIN, execute `PATCH /api/admin/patrimonios/{id}/publicar`, sem corpo ou com `{}`.
    Confira o resultado em `GET /api/patrimonios` e `GET /api/patrimonios/{slug}`.

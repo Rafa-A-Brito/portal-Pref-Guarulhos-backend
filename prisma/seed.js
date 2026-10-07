@@ -1,3 +1,4 @@
+throw new Error("Seed antiga desativada. Execute npm run prisma:seed para importar a pesquisa do mock.");
 /**
  * Popula o banco com patrimônios materiais de Guarulhos para exercitar a
  * consulta pública. O seed é idempotente: categorias e patrimônios são

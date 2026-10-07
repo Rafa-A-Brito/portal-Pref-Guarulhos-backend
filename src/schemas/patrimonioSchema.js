@@ -30,19 +30,42 @@ export const localizacaoSchema = localizacaoFieldsSchema.superRefine((localizaca
     }
 });
 
+const position = z.number().int().min(0).max(2147483647);
+const orderedArray = (schema) => z.array(schema).superRefine((items, context) => {
+    const orders = items.map((item) => item.ordem).sort((a, b) => a - b);
+    if (orders.some((order, index) => order !== index)) context.addIssue({ code: "custom", message: "As ordens devem ser únicas e contíguas a partir de zero." });
+}).optional();
+const sectionSchema = z.strictObject({
+    icone: z.string().trim().min(1).nullable().optional(),
+    titulo: z.string().trim().min(1), texto: z.string().trim().min(1), ordem: position,
+});
+const factSchema = z.strictObject({ rotulo: z.string().trim().min(1), valor: z.string().trim().min(1), ordem: position });
+const linkSchema = z.strictObject({ patrimonioDestinoId: z.uuid(), texto: z.string().trim().min(1), ordem: position });
+
 const createPatrimonioFieldsSchema = z.strictObject({
     nome: z.string().trim().min(1, "Informe o nome.").max(200),
-    descricao: z.string().trim().min(1, "Informe a descrição."),
+    descricao: z.string().trim().min(1, "Informe a descrição.").nullable().optional(),
+    numeroExibicao: z.number().int().min(1).max(2147483647).nullable().optional(),
+    ordemExibicao: position.nullable().optional(),
     descricaoResumida: z.string().trim().min(1, "Informe a descrição resumida.").max(500),
     categoriaId: z.uuid("Informe uma categoria válida."),
-    historia: z.string().trim().min(1, "Informe uma história válida.").optional(),
-    importanciaCultural: z.string().trim().min(1, "Informe uma importância cultural válida.").optional(),
+    historia: z.string().trim().min(1, "Informe uma história válida.").nullable().optional(),
+    importanciaCultural: z.string().trim().min(1, "Informe uma importância cultural válida.").nullable().optional(),
     categoriasAdicionais: z.array(z.uuid("Informe categorias adicionais válidas.")).max(6, "Informe no máximo 6 categorias adicionais.").optional(),
     situacao: z.enum(Object.values(SituacaoPatrimonio)).default(SituacaoPatrimonio.NAO_INFORMADO),
     localizacao: localizacaoSchema.optional(),
+    secoes: orderedArray(sectionSchema),
+    fatos: orderedArray(factSchema),
+    ligacoes: orderedArray(linkSchema),
 });
 
+function validateLinks(data, context) {
+    const ids = (data.ligacoes ?? []).map((l) => l.patrimonioDestinoId);
+    if (new Set(ids).size !== ids.length) context.addIssue({ code: "custom", path: ["ligacoes"], message: "O destino não pode se repetir." });
+}
+
 export const createPatrimonioSchema = createPatrimonioFieldsSchema.superRefine((dados, context) => {
+    validateLinks(dados, context);
     const adicionais = dados.categoriasAdicionais ?? [];
 
     if (new Set(adicionais).size !== adicionais.length) {
@@ -92,6 +115,7 @@ export const updatePatrimonioSchema = createPatrimonioFieldsSchema.partial().ext
         uf: localizacaoFieldsSchema.shape.uf.removeDefault().optional(),
     }).refine(nonEmpty, "Informe algum campo da localização.").optional(),
 }).refine(nonEmpty, "Informe algum campo para atualizar.").superRefine((dados, context) => {
+    validateLinks(dados, context);
     if (dados.categoriasAdicionais && new Set(dados.categoriasAdicionais).size !== dados.categoriasAdicionais.length) {
         context.addIssue({ code: "custom", path: ["categoriasAdicionais"], message: "Não repita categorias adicionais." });
     }
