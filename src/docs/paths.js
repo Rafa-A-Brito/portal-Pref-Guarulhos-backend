@@ -26,7 +26,48 @@ const localizacao = { id: localId, patrimonioId, endereco: "Rua Exemplo", numero
 const imagem = { id: imagemId, url: "https://example.org/imagem.jpg", titulo: null, textoAlternativo: "Fachada da edificação", principal: true };
 const resumo = { id: patrimonioId, nome: "Casa da Cultura Exemplo", slug: "casa-da-cultura-exemplo", descricaoResumida: "Edificação histórica em Guarulhos.", situacao: "PRESERVADO", publicadoEm: "2026-09-01T12:00:00.000Z", categoria, localizacao, imagens: [imagem] };
 
+const dashboardPendencias = [
+    { indicador: "porTombamento", motivo: "O schema atual não possui campos de tombamento nem relação de proteção com esfera e patrimônio; a modelagem e o indicador estão pendentes." },
+    { indicador: "localizacao.regioes", motivo: "O schema atual não possui região nem associação de bairros a regiões; a definição e o indicador estão pendentes." },
+    { indicador: "rotas", motivo: "Rota e RotaPatrimonio já existem no schema; faltam definir quais rotas são disponíveis/ativas e implementar o indicador. PUBLICADO define publicação, sem regra explícita de atividade." },
+];
+const dashboardPendente = (index) => ({ disponivel: false, motivo: dashboardPendencias[index].motivo, dados: null });
+const dashboardVazio = {
+    totalPatrimonios: 0, porCategoria: { disponivel: true, dados: [] },
+    porTombamento: dashboardPendente(0),
+    localizacao: { bairros: { disponivel: true, totalBairrosDistintos: 0, distribuicao: [] }, regioes: dashboardPendente(1) },
+    rotas: dashboardPendente(2),
+    meta: { parcial: true, baseContagem: "TODOS_OS_STATUS", pendencias: dashboardPendencias },
+};
+
 export const paths = {
+    "/api/admin/dashboard": {
+        get: {
+            tags: ["Dashboard"], summary: "Consulta o dashboard administrativo de todos os patrimônios cadastrados",
+            security: bearerAuth,
+            description: "Disponível para usuários ADMIN e EDITOR autenticados e ativos, com token Bearer JWT. Ambos os perfis recebem os indicadores. Sem token, token inválido/expirado ou conta inativa retorna 401. Todas as contagens de patrimônios incluem RASCUNHO, PUBLICADO e ARQUIVADO (TODOS_OS_STATUS) na mesma fotografia do banco, em transação RepeatableRead. Mudança de contrato: totalPublicados foi substituído por totalPatrimonios. Categorias usam apenas a categoria principal, evitando duplicação por categorias adicionais; percentuais sobre o total geral são arredondados a duas casas. Bairros têm espaços nas extremidades removidos e grupos normalizados iguais são reunidos; sem localização ou com bairro vazio/nulo entra em Não informado, sem contar esse grupo como bairro real. Resultados ordenados por nome (categorias com desempate por ID) e bairro. Sem registros, retorna HTTP 200, total zero e listas vazias nos indicadores implementados. Tombamento não possui relação de proteção com esfera/patrimônio; regiões não possuem campo nem associação bairro/região. Rotas possuem modelos Rota/RotaPatrimonio e ordem dos pontos, mas falta definir disponibilidade/atividade: PUBLICADO não é assumido como ativo. Não há endpoint de detalhes de rota para obtenção dos pontos; indicador e mapa ficam pendentes dessa decisão. Pendência não significa ausência de registros: os indicadores pendentes retornam disponivel=false, motivo e dados=null; meta.parcial reflete as pendências e atualmente é true. As consultas públicas de patrimônios continuam restritas a PUBLICADO.",
+            responses: {
+                200: {
+                    description: "Dashboard parcial, inclusive quando não há patrimônios cadastrados.",
+                    content: { "application/json": { schema: schema("DashboardResponse"), examples: {
+                        vazio: { summary: "Sem patrimônios cadastrados", value: { success: true, data: dashboardVazio } },
+                        cadastrados: { summary: "Três patrimônios em qualquer status, incluindo um sem bairro informado", value: { success: true, data: {
+                            ...dashboardVazio, totalPatrimonios: 3,
+                            porCategoria: { disponivel: true, dados: [
+                                { id: categoriaId, nome: "Histórico", quantidade: 2, percentual: 66.67 },
+                                { id: "66666666-6666-4666-8666-666666666666", nome: "Religioso", quantidade: 1, percentual: 33.33 },
+                            ] },
+                            localizacao: { ...dashboardVazio.localizacao, bairros: {
+                                disponivel: true, totalBairrosDistintos: 1,
+                                distribuicao: [{ bairro: "Centro", quantidade: 2 }, { bairro: "Não informado", quantidade: 1 }],
+                            } },
+                        } } },
+                    } } },
+                },
+                401: unauthorized, 403: forbidden, 500: internal,
+            },
+        },
+    },
     "/api": {
         get: {
             tags: ["Sistema"], summary: "Identifica a API", description: "Retorna nome e versão da aplicação.",

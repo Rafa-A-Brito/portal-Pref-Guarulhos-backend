@@ -11,7 +11,7 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     const operations = Object.entries(openapi.paths).flatMap(([path, methods]) =>
         Object.keys(methods).map((method) => `${method.toUpperCase()} ${path}`));
     assert.deepEqual(operations.sort(), [
-        "GET /api", "GET /api/health", "GET /api/docs", "GET /api/docs.json",
+        "GET /api", "GET /api/health", "GET /api/docs", "GET /api/docs.json", "GET /api/admin/dashboard",
         "POST /api/auth/login", "PATCH /api/auth/senha", "POST /api/admins", "GET /api/patrimonios",
         "GET /api/patrimonios/{slug}", "POST /api/admin/patrimonios",
         "GET /api/admin/patrimonios", "GET /api/admin/patrimonios/{id}",
@@ -21,7 +21,7 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
 
     for (const [path, methods] of Object.entries(openapi.paths)) {
         for (const operation of Object.values(methods)) {
-            assert.equal(Boolean(operation.security), path === "/api/admins" || path === "/api/auth/senha" || path.startsWith("/api/admin/patrimonios"));
+            assert.equal(Boolean(operation.security), path === "/api/admins" || path === "/api/auth/senha" || path.startsWith("/api/admin/"));
         }
     }
     assert.equal(openapi.components.schemas.AdminRequest.properties.password.writeOnly, true);
@@ -29,6 +29,22 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     assert.equal(openapi.components.schemas.ChangePasswordRequest.properties.novaSenha.writeOnly, true);
     assert.equal(JSON.stringify(openapi).includes("passwordHash"), false);
     assert.equal(openapi.components.schemas.PatrimonioResumo.properties.imagens.maxItems, 1);
+    assert.equal(openapi.paths["/api/dashboard"], undefined);
+    const dashboard = openapi.paths["/api/admin/dashboard"].get;
+    assert.deepEqual(dashboard.security, [{ bearerAuth: [] }]);
+    assert.match(dashboard.description, /ADMIN/);
+    assert.match(dashboard.description, /EDITOR/);
+    assert.ok(dashboard.responses[401]);
+    assert.ok(dashboard.responses[403]);
+    const dashboardSchema = openapi.components.schemas.Dashboard;
+    assert.ok(dashboardSchema.required.includes("totalPatrimonios"));
+    assert.equal(dashboardSchema.properties.totalPublicados, undefined);
+    assert.deepEqual(dashboardSchema.properties.meta.properties.baseContagem.enum, ["TODOS_OS_STATUS"]);
+    for (const example of Object.values(dashboard.responses[200].content["application/json"].examples)) {
+        assert.equal(example.value.data.meta.baseContagem, "TODOS_OS_STATUS");
+        assert.equal(example.value.data.totalPublicados, undefined);
+        assert.ok(Number.isInteger(example.value.data.totalPatrimonios));
+    }
 });
 
 test("Swagger UI e JSON respondem sem consultar o banco", async () => {

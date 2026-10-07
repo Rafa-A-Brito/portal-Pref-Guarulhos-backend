@@ -273,6 +273,12 @@ src/
 Para testar consulta, edição, publicação e arquivamento de patrimônios pelo Swagger ou Postman,
 consulte o [guia de administração de patrimônios](docs/patrimonios-admin.md).
 
+Para consultar `GET /api/admin/dashboard` com acesso ADMIN ou EDITOR e executar seus testes, consulte o
+[guia do dashboard estatístico](docs/dashboard.md).
+O dashboard usa `totalPatrimonios` e `meta.baseContagem: "TODOS_OS_STATUS"`,
+incluindo rascunhos, publicados e arquivados. O campo anterior `totalPublicados`
+foi substituído; as consultas públicas continuam restritas a publicados.
+
 Contribuições são bem-vindas! Para contribuir:
 
 1. Faça um fork do projeto

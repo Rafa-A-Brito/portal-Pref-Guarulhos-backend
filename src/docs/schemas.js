@@ -3,6 +3,71 @@ const string = (description, extra = {}) => ({ type: "string", description, ...e
 const nullable = (schema) => ({ ...schema, nullable: true });
 
 export const schemas = {
+    DashboardIndicadorPendente: {
+        type: "object", required: ["disponivel", "motivo", "dados"],
+        properties: {
+            disponivel: { type: "boolean", enum: [false] },
+            motivo: { type: "string", minLength: 1 },
+            dados: { type: "object", nullable: true, enum: [null], description: "Sempre null enquanto o indicador estiver pendente, mesmo com banco vazio." },
+        },
+    },
+    Dashboard: {
+        type: "object", required: ["totalPatrimonios", "porCategoria", "localizacao", "porTombamento", "rotas", "meta"],
+        properties: {
+            totalPatrimonios: { type: "integer", minimum: 0, description: "Total geral cadastrado: RASCUNHO, PUBLICADO e ARQUIVADO. Substitui totalPublicados no contrato." },
+            porCategoria: {
+                type: "object", required: ["disponivel", "dados"],
+                properties: {
+                    disponivel: { type: "boolean", enum: [true] },
+                    dados: { type: "array", description: "Todos os status, categoria principal apenas, ordenada por nome e ID. Sem patrimônios, lista vazia.", items: {
+                        type: "object", required: ["id", "nome", "quantidade", "percentual"],
+                        properties: {
+                            id: { type: "string", format: "uuid" }, nome: { type: "string" },
+                            quantidade: { type: "integer", minimum: 1 },
+                            percentual: { type: "number", minimum: 0, maximum: 100, description: "Quantidade / totalPatrimonios × 100, arredondado a duas casas decimais. A soma pode diferir de 100 pelo arredondamento." },
+                        },
+                    } },
+                },
+            },
+            localizacao: {
+                type: "object", required: ["bairros", "regioes"],
+                properties: {
+                    bairros: {
+                        type: "object", required: ["disponivel", "totalBairrosDistintos", "distribuicao"],
+                        properties: {
+                            disponivel: { type: "boolean", enum: [true] },
+                            totalBairrosDistintos: { type: "integer", minimum: 0, description: "Bairros distintos após trim; o grupo sintético Não informado não conta como bairro real." },
+                            distribuicao: { type: "array", description: "Todos os status, ordenada por bairro. Sem localização ou com bairro vazio/nulo entra uma única vez em Não informado. Sem patrimônios, lista vazia. Bairro é obrigatório no schema atual; nulo é tratado defensivamente.", items: {
+                                type: "object", required: ["bairro", "quantidade"],
+                                properties: { bairro: { type: "string" }, quantidade: { type: "integer", minimum: 1 } },
+                            } },
+                        },
+                    },
+                    regioes: ref("DashboardIndicadorPendente"),
+                },
+            },
+            porTombamento: ref("DashboardIndicadorPendente"),
+            rotas: ref("DashboardIndicadorPendente"),
+            meta: {
+                type: "object", required: ["parcial", "baseContagem", "pendencias"],
+                properties: {
+                    parcial: { type: "boolean", enum: [true] },
+                    baseContagem: { type: "string", enum: ["TODOS_OS_STATUS"] },
+                    pendencias: { type: "array", minItems: 3, maxItems: 3, items: {
+                        type: "object", required: ["indicador", "motivo"],
+                        properties: {
+                            indicador: { type: "string", enum: ["porTombamento", "localizacao.regioes", "rotas"] },
+                            motivo: { type: "string", minLength: 1 },
+                        },
+                    } },
+                },
+            },
+        },
+    },
+    DashboardResponse: {
+        type: "object", required: ["success", "data"],
+        properties: { success: { type: "boolean", enum: [true] }, data: ref("Dashboard") },
+    },
     SystemResponse: { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: { type: "object", required: ["name", "version"], properties: { name: { type: "string" }, version: { type: "string" } } } } },
     HealthResponse: { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: { type: "object", required: ["status"], properties: { status: { type: "string", enum: ["ok"] } } } } },
     Role: { type: "string", enum: ["ADMIN", "EDITOR"] },

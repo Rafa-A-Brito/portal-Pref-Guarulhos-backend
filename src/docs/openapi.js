@@ -10,6 +10,7 @@ const openapi = {
     },
     servers: [{ url: "/" }],
     tags: [
+        { name: "Dashboard" },
         { name: "Sistema" },
         { name: "Autenticação" },
         { name: "Administradores" },
