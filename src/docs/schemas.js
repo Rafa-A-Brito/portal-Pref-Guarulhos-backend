@@ -180,7 +180,7 @@ schemas.ImagemMidia = {
     type: "object", required: ["id", "patrimonioId", "url", "textoAlternativo", "ordem", "principal"],
     properties: {
         id: string("UUID", { format: "uuid" }), patrimonioId: string("UUID", { format: "uuid" }),
-        url: string("URL gerada pela API; use /uploads/imagens/<arquivo>."),
+        url: string("URL gerada pela API; use /api/uploads/imagens/<arquivo>."),
         titulo: nullable({ type: "string" }), textoAlternativo: { type: "string" },
         credito: nullable({ type: "string" }), fonte: nullable({ type: "string" }),
         ordem: { type: "integer", minimum: 0 }, principal: { type: "boolean" },

@@ -210,7 +210,7 @@ paths["/api/admin/patrimonios/{id}/imagens/{imagemId}"] = {
     },
     delete: {
         tags: ["Mídias administrativas"], summary: "Remove uma imagem do patrimônio",
-        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. URLs externas nunca são apagadas. Se a remoção física falhar, a resposta traz um aviso e a operação pode ser repetida.`,
+        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. URLs externas nunca são apagadas. O arquivo é apagado antes do registro: se a remoção física falhar, a operação retorna erro e o registro é preservado, de modo que repetir a requisição tenta a limpeza novamente.`,
         security: bearerAuth, parameters: [idParameter, imagemPathParameter],
         responses: {
             200: response("Imagem removida.", "ImagemMidiaResponse"),
@@ -251,7 +251,7 @@ paths["/api/admin/patrimonios/{id}/documentos/{documentoId}"] = {
     },
     delete: {
         tags: ["Mídias administrativas"], summary: "Remove um documento do patrimônio",
-        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. Se a remoção física falhar, a resposta traz um aviso e a operação pode ser repetida.`,
+        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. O arquivo é apagado antes do registro: se a remoção física falhar, a operação retorna erro e o registro é preservado, de modo que repetir a requisição tenta a limpeza novamente.`,
         security: bearerAuth, parameters: [idParameter, documentoPathParameter],
         responses: {
             200: response("Documento removido.", "DocumentoMidiaResponse"),

@@ -129,15 +129,16 @@ export async function deleteImagem(patrimonioId, imagemId, user) {
     const patrimonio = await exigirPatrimonio(prisma, patrimonioId);
     exigirPermissao(patrimonio.status, user);
 
-    const removida = await prisma.$transaction(async (transaction) => {
-        const midia = await exigirMidia(transaction, "patrimonioImagem", { id: imagemId, patrimonioId }, "Imagem não encontrada.", "IMAGEM_NOT_FOUND");
-        await transaction.patrimonioImagem.delete({ where: { id: imagemId } });
-        return midia;
-    });
+    const imagem = await exigirMidia(prisma, "patrimonioImagem", { id: imagemId, patrimonioId }, "Imagem não encontrada.", "IMAGEM_NOT_FOUND");
 
-    // O disco fica fora da transação do Prisma. Se a remoção física falhar, o
-    // registro já saiu do banco e a operação pode ser repetida.
-    return removerArquivo(removida, "imagem");
+    // O arquivo é apagado antes do registro. Se a remoção física falhar, o
+    // registro permanece no banco e repetir o DELETE realmente tenta de novo
+    // (o aviso "Tente novamente" passa a ser verdadeiro).
+    const arquivoRemovido = await apagarArquivo(imagem, "imagem");
+
+    await prisma.patrimonioImagem.delete({ where: { id: imagemId } });
+
+    return { ...imagem, arquivoRemovido };
 }
 
 // --- Documentos ----------------------------------------------------------
@@ -155,7 +156,7 @@ export async function createDocumento(patrimonioId, metadados, arquivo, user) {
                 ...metadados,
                 patrimonioId,
                 url: urlPublica("documento", arquivo),
-              
+
                 mimeType: mimeReal,
             },
         });
@@ -178,25 +179,30 @@ export async function deleteDocumento(patrimonioId, documentoId, user) {
     const patrimonio = await exigirPatrimonio(prisma, patrimonioId);
     exigirPermissao(patrimonio.status, user);
 
-    const removido = await prisma.$transaction(async (transaction) => {
-        const midia = await exigirMidia(transaction, "patrimonioDocumento", { id: documentoId, patrimonioId }, "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
-        await transaction.patrimonioDocumento.delete({ where: { id: documentoId } });
-        return midia;
-    });
+    const documento = await exigirMidia(prisma, "patrimonioDocumento", { id: documentoId, patrimonioId }, "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
 
-    return removerArquivo(removido, "documento");
+    // Mesma ordem do delete de imagem: limpa o disco antes de remover o registro.
+    const arquivoRemovido = await apagarArquivo(documento, "documento");
+
+    await prisma.patrimonioDocumento.delete({ where: { id: documentoId } });
+
+    return { ...documento, arquivoRemovido };
 }
 
-// Remove o arquivo gerenciado e devolve um aviso quando a remoção física falha,
-// para não informar conclusão completa ao cliente.
-async function removerArquivo(midia, rotulo) {
+// Apaga o arquivo gerenciado antes de remover o registro. Se a remoção física
+// falhar, o erro sobe e o registro continua no banco, de modo que repetir o
+// DELETE vai encontrar a mídia novamente para apagar. ENOENT =
+// sucesso, pois o objetivo (não deixar arquivo órfão) já está satisfeito.
+async function apagarArquivo(midia, rotulo) {
     const caminho = caminhoDoArquivo(midia.url);
 
     try {
         await apagarArquivoGerenciado(caminho);
-        return { ...midia, arquivoRemovido: true };
+        return true;
     } catch (error) {
         console.error(`Falha ao remover o arquivo da mídia (${rotulo}).`, { caminho, code: error.code });
-        return { ...midia, arquivoRemovido: false, aviso: "Registro removido, mas o arquivo não pôde ser apagado do disco. Tente novamente." };
+        const erro = new BaseError("Não foi possível apagar o arquivo da mídia. Tente novamente.", 500);
+        erro.code = "ARQUIVO_NAO_REMOVIDO";
+        throw erro;
     }
 }

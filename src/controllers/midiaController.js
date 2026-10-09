@@ -13,7 +13,7 @@ export async function updateImagem(req, res) {
 
 export async function deleteImagem(req, res) {
     const imagem = await service.deleteImagem(req.validatedParams.id, req.validatedParams.imagemId, req.user);
-    res.json({ success: true, data: imagem, ...(imagem.aviso && { message: imagem.aviso }) });
+    res.json({ success: true, data: imagem });
 }
 
 export async function createDocumento(req, res) {
@@ -28,5 +28,5 @@ export async function updateDocumento(req, res) {
 
 export async function deleteDocumento(req, res) {
     const documento = await service.deleteDocumento(req.validatedParams.id, req.validatedParams.documentoId, req.user);
-    res.json({ success: true, data: documento, ...(documento.aviso && { message: documento.aviso }) });
+    res.json({ success: true, data: documento });
 }

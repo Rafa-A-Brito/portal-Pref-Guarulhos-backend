@@ -12,8 +12,8 @@ export const PASTAS = {
 };
 
 export const URL_PREFIXO = {
-    imagem: "/uploads/imagens",
-    documento: "/uploads/documentos",
+    imagem: "/api/uploads/imagens",
+    documento: "/api/uploads/documentos",
 };
 
 export const LIMITES = {
