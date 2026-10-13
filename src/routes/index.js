@@ -2,6 +2,7 @@ import { Router } from "express";
 import authRoutes from "./authRoute.js";
 import adminRoutes from "./adminRoute.js";
 import adminPatrimonioRoutes from "./adminPatrimonioRoute.js";
+import dashboardRoutes from "./dashboardRoute.js";
 import patrimonioRoutes from "./patrimonioRoute.js";
 import { servirArquivo } from "../controllers/midiaPublicaController.js";
 import authenticateOpcional from "../middlewares/authenticateOpcional.js";
@@ -24,6 +25,7 @@ router.get("/health", (_req, res) => {
 router.use("/auth", authRoutes);
 router.use("/admins", adminRoutes);
 router.use("/patrimonios", patrimonioRoutes);
+router.use("/admin/dashboard", dashboardRoutes);
 router.use("/admin/patrimonios", adminPatrimonioRoutes);
 
 // Mídias são entregues por rota própria, com checagem do status do patrimônio,

@@ -24,7 +24,8 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:status": "prisma migrate status",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "test:postgres": "node scripts/validate-patrimonios-postgres.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",

@@ -3,6 +3,20 @@ import { test } from "node:test";
 import SwaggerParser from "@apidevtools/swagger-parser";
 import openapi from "../src/docs/openapi.js";
 
+test("Swagger documenta região opcional nullable com códigos e rótulos em todos os contratos", async () => {
+    const { RegiaoPatrimonio } = await import("@prisma/client");
+    for (const name of ["LocalizacaoRequest", "LocalizacaoPatch", "Localizacao"]) {
+        const schema = openapi.components.schemas[name];
+        const regiao = schema.properties.regiao;
+        assert.equal(schema.required?.includes("regiao") ?? false, false);
+        assert.equal(regiao.nullable, true);
+        assert.deepEqual(regiao.enum, [...Object.values(RegiaoPatrimonio), null]);
+        assert.deepEqual(Object.keys(regiao["x-enum-labels"]), Object.values(RegiaoPatrimonio));
+        assert.equal(regiao["x-enum-labels"].VILA_GALVAO, "Vila Galvão");
+        assert.equal(regiao.enum.includes("NAO_INFORMADO"), false);
+    }
+});
+
 test("especificação OpenAPI válida, com referências, rotas e autenticação corretas", async () => {
     await SwaggerParser.validate(openapi);
     assert.equal(openapi.openapi, "3.0.3");
@@ -11,7 +25,7 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     const operations = Object.entries(openapi.paths).flatMap(([path, methods]) =>
         Object.keys(methods).map((method) => `${method.toUpperCase()} ${path}`));
     assert.deepEqual(operations.sort(), [
-        "GET /api", "GET /api/health", "GET /api/docs", "GET /api/docs.json",
+        "GET /api", "GET /api/health", "GET /api/docs", "GET /api/docs.json", "GET /api/admin/dashboard",
         "POST /api/auth/login", "PATCH /api/auth/senha", "POST /api/admins", "GET /api/patrimonios",
         "GET /api/patrimonios/{slug}", "POST /api/admin/patrimonios",
         "GET /api/admin/patrimonios", "GET /api/admin/patrimonios/{id}",
@@ -26,9 +40,7 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
 
     for (const [path, methods] of Object.entries(openapi.paths)) {
         for (const operation of Object.values(methods)) {
-            // A rota de arquivos é pública para mídias de patrimônios publicados
-            // e usa autenticação opcional para as demais.
-            assert.equal(Boolean(operation.security), path !== "/api" && path !== "/api/health" && path !== "/api/docs" && path !== "/api/docs.json" && path !== "/api/auth/login" && path !== "/api/patrimonios" && path !== "/api/patrimonios/{slug}" && path !== "/api/uploads/{tipo}/{arquivo}");
+            assert.equal(Boolean(operation.security), path === "/api/admins" || path === "/api/auth/senha" || path.startsWith("/api/admin/"));
         }
     }
     assert.equal(openapi.components.schemas.AdminRequest.properties.password.writeOnly, true);
@@ -36,6 +48,59 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     assert.equal(openapi.components.schemas.ChangePasswordRequest.properties.novaSenha.writeOnly, true);
     assert.equal(JSON.stringify(openapi).includes("passwordHash"), false);
     assert.equal(openapi.components.schemas.PatrimonioResumo.properties.imagens.maxItems, 1);
+    assert.equal(openapi.paths["/api/dashboard"], undefined);
+    const dashboard = openapi.paths["/api/admin/dashboard"].get;
+    assert.deepEqual(dashboard.security, [{ bearerAuth: [] }]);
+    assert.match(dashboard.description, /ADMIN/);
+    assert.match(dashboard.description, /EDITOR/);
+    assert.ok(dashboard.responses[401]);
+    assert.ok(dashboard.responses[403]);
+    const dashboardSchema = openapi.components.schemas.Dashboard;
+    assert.ok(dashboardSchema.required.includes("totalPatrimonios"));
+    assert.equal(dashboardSchema.properties.totalPublicados, undefined);
+    assert.deepEqual(dashboardSchema.properties.meta.properties.baseContagem.enum, ["TODOS_OS_STATUS"]);
+    assert.deepEqual(dashboardSchema.properties.meta.properties.parcial.enum, [false]);
+    assert.equal(dashboardSchema.properties.meta.properties.pendencias.maxItems, 0);
+    assert.deepEqual(Object.keys(dashboardSchema.properties).sort(), ["localizacao", "meta", "porCategoria", "totalPatrimonios"]);
+    assert.equal(openapi.components.schemas.DashboardIndicadorPendente, undefined);
+    const regionalSchema = dashboardSchema.properties.localizacao.properties.regioes;
+    assert.deepEqual(regionalSchema.required, ["disponivel", "totalRegioesDistintas", "distribuicao"]);
+    assert.deepEqual(regionalSchema.properties.disponivel.enum, [true]);
+    const regionalItem = regionalSchema.properties.distribuicao.items;
+    assert.deepEqual(regionalItem.required, ["regiao", "nome", "quantidade"]);
+    assert.equal(regionalItem.properties.regiao.nullable, true);
+    assert.equal(regionalItem.properties.quantidade.minimum, 1);
+    for (const example of Object.values(dashboard.responses[200].content["application/json"].examples)) {
+        assert.equal(example.value.data.meta.baseContagem, "TODOS_OS_STATUS");
+        assert.equal(example.value.data.totalPublicados, undefined);
+        assert.ok(Number.isInteger(example.value.data.totalPatrimonios));
+        assert.deepEqual(example.value.data.meta, { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] });
+        assert.equal(Object.hasOwn(example.value.data, "porTombamento"), false);
+        assert.equal(Object.hasOwn(example.value.data, "rotas"), false);
+        const regions = example.value.data.localizacao.regioes;
+        assert.equal(regions.disponivel, true);
+        assert.equal(regions.distribuicao.reduce((sum, item) => sum + item.quantidade, 0), example.value.data.totalPatrimonios);
+        assert.equal(regions.totalRegioesDistintas, regions.distribuicao.filter((item) => item.regiao !== null).length);
+        for (const item of regions.distribuicao) {
+            assert.ok(item.quantidade > 0);
+            assert.equal(item.nome, item.regiao === null ? "Não informado" : regionalItem.properties.regiao["x-enum-labels"][item.regiao]);
+        }
+    }
+    assert.equal(openapi.components.schemas.PatrimonioRequest.required.includes("descricao"), false);
+    assert.equal(openapi.components.schemas.PatrimonioDetalhe.properties.descricao.nullable, true);
+    for (const name of ["Secao", "Fato", "Ligacao"]) assert.ok(openapi.components.schemas[name].properties.id);
+    for (const name of ["PatrimonioRequest", "PatrimonioPatch"]) {
+        const fields = openapi.components.schemas[name].properties;
+        assert.equal(fields.categoriasAdicionais.maxItems, 6);
+        assert.equal(fields.categoriasAdicionais.uniqueItems, true);
+        for (const field of ["secoes", "fatos", "ligacoes", "numeroExibicao", "ordemExibicao"]) assert.ok(fields[field]);
+        for (const field of ["descricao", "historia", "importanciaCultural"]) assert.equal(fields[field].nullable, true);
+    }
+    for (const name of ["PatrimonioResumo", "PatrimonioDetalhe", "PatrimonioCriado", "PatrimonioAdminResumo", "PatrimonioAdmin"]) {
+        const contract = openapi.components.schemas[name];
+        assert.equal(new Set(contract.required).size, contract.required.length, name);
+        assert.ok(contract.properties.categoriasAdicionais);
+    }
 });
 
 test("Swagger UI e JSON respondem sem consultar o banco", async () => {

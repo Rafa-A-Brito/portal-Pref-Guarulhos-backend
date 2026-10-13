@@ -12,6 +12,8 @@
 
 Aplicação web interativa para o mapeamento, consulta e preservação da memória dos patrimônios históricos da cidade de Guarulhos. A plataforma permite a navegação por rotas culturais, visualização em mapa interativo via Google Maps, análise de dados estatísticos e mecanismos avançados de pesquisa e filtragem.
 
+Documentação da [classificação territorial dos patrimônios](docs/classificacao-territorial.md): códigos, rótulos, contratos e aplicação da migration.
+
 ---
 
 ## 📖 Sobre o Projeto
@@ -153,9 +155,10 @@ Para criar/aplicar as migrations durante o desenvolvimento:
 npx prisma migrate dev
 ```
 
-Para popular o ambiente local com os patrimônios iniciais:
+Para importar os 34 registros da pesquisa como RASCUNHO, configure PATRIMONIOS_PUBLIC_BASE_URL, aplique as migrations e revise o dry-run. Consulte [a política de importação, reconciliação e imagens](docs/populacao-patrimonios.md). A seed antiga está desativada.
 
 ```bash
+npm run prisma:seed -- --dry-run
 npm run prisma:seed
 ```
 
@@ -193,7 +196,7 @@ GET /api/patrimonios/:slug
 ```
 
 A listagem aceita os parâmetros opcionais `busca`, `categoria`, `situacao`,
-`bairro`, `pagina` e `limite`. Apenas patrimônios publicados são retornados.
+`bairro`, `pagina` e `limite`. Apenas patrimônios publicados são retornados, em ordem editorial (null por último). Categoria aceita nome ou slug; busca inclui título/texto das seções. O detalhe retorna seções, fatos e ligações ordenadas, além de número/ordem de exibição. A carga mantém RASCUNHO e não publica os registros.
 
 Exemplo:
 
@@ -272,6 +275,15 @@ src/
 
 Para testar consulta, edição, publicação e arquivamento de patrimônios pelo Swagger ou Postman,
 consulte o [guia de administração de patrimônios](docs/patrimonios-admin.md).
+
+Para consultar `GET /api/admin/dashboard` com acesso ADMIN ou EDITOR e executar seus testes, consulte o
+[guia do dashboard estatístico](docs/dashboard.md).
+O dashboard usa `totalPatrimonios` e `meta.baseContagem: "TODOS_OS_STATUS"`,
+incluindo rascunhos, publicados e arquivados. O campo anterior `totalPublicados`
+foi substituído; as consultas públicas continuam restritas a publicados.
+O escopo reduzido inclui total, categorias principais, bairros e regiões;
+tombamento e rotas foram retirados desta entrega. `meta.parcial: false` e
+pendências vazias indicam conclusão desse escopo, não da seção 5.5 original inteira.
 
 Contribuições são bem-vindas! Para contribuir:
 
