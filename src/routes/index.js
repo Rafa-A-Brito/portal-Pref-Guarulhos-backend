@@ -7,6 +7,7 @@ import { servirArquivo } from "../controllers/midiaPublicaController.js";
 import authenticateOpcional from "../middlewares/authenticateOpcional.js";
 import { validateParams } from "../middlewares/validate.js";
 import { arquivoParamsSchema } from "../schemas/midiaSchema.js";
+import dashboardRoutes from "./dashboardRoute.js";
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.get("/health", (_req, res) => {
 router.use("/auth", authRoutes);
 router.use("/admins", adminRoutes);
 router.use("/patrimonios", patrimonioRoutes);
+router.use("/admin/dashboard", dashboardRoutes);
 router.use("/admin/patrimonios", adminPatrimonioRoutes);
 
 // Mídias são entregues por rota própria, com checagem do status do patrimônio,
