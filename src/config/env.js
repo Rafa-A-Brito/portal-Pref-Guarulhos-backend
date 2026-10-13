@@ -7,6 +7,9 @@ const result = z.object({
     CORS_ORIGIN: z.url().default("http://localhost:5173"),
     JWT_SECRET: z.string().min(32),
     JWT_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(900),
+    UPLOAD_ROOT: z.string().trim().min(1).default("uploads"),
+    UPLOAD_MAX_IMAGE_BYTES: z.coerce.number().int().min(1).default(5 * 1024 * 1024),
+    UPLOAD_MAX_DOCUMENT_BYTES: z.coerce.number().int().min(1).default(10 * 1024 * 1024),
 }).safeParse(process.env);
 
 if (!result.success) {

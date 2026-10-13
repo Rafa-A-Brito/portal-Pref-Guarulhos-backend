@@ -1,5 +1,7 @@
 # Administração de patrimônios
 
+Para limpeza de uploads, exclusão com quarentena privada e recuperação de
+pendências de arquivos, consulte [mídias e arquivos](midias-arquivos.md).
 `localizacao.regiao` aceita código territorial ou `null`. No PATCH, omitir preserva a classificação e `null` limpa. Veja os [códigos, rótulos e migration](classificacao-territorial.md).
 
 Com o banco e as variáveis de ambiente configurados, execute `npm run dev`.

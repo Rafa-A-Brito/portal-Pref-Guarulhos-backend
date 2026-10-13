@@ -31,6 +31,11 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
         "GET /api/admin/patrimonios", "GET /api/admin/patrimonios/{id}",
         "PATCH /api/admin/patrimonios/{id}", "PATCH /api/admin/patrimonios/{id}/publicar",
         "PATCH /api/admin/patrimonios/{id}/arquivar",
+        "POST /api/admin/patrimonios/{id}/imagens", "PATCH /api/admin/patrimonios/{id}/imagens/{imagemId}",
+        "DELETE /api/admin/patrimonios/{id}/imagens/{imagemId}",
+        "POST /api/admin/patrimonios/{id}/documentos", "PATCH /api/admin/patrimonios/{id}/documentos/{documentoId}",
+        "DELETE /api/admin/patrimonios/{id}/documentos/{documentoId}",
+        "GET /api/uploads/{tipo}/{arquivo}",
     ].sort());
 
     for (const [path, methods] of Object.entries(openapi.paths)) {
