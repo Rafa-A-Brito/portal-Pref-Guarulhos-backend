@@ -1,11 +1,5 @@
 import { RegiaoPatrimonio } from "@prisma/client";
-
-const regiaoLabels = {
-    CENTRO: "Centro", VILA_GALVAO: "Vila Galvão", TABOAO: "Taboão", SAO_JOAO: "São João",
-    CUMBICA: "Cumbica", PIMENTAS: "Pimentas", BONSUCESSO: "Bonsucesso", CABUCU: "Cabuçu",
-    TANQUE_GRANDE: "Tanque Grande", CAPELINHA: "Capelinha", JAGUARI: "Jaguari",
-    AEROPORTO: "Aeroporto", PARQUE_ESTADUAL_CANTAREIRA: "Parque Estadual da Cantareira",
-};
+import { regiaoLabels } from "../utils/regiaoPatrimonio.js";
 const regiaoField = {
     type: "string", nullable: true, enum: [...Object.values(RegiaoPatrimonio), null],
     description: "Classificação territorial opcional, separada do bairro. Os primeiros 11 códigos representam as UPRs adotadas como referência pelo projeto; Aeroporto e Parque Estadual da Cantareira são áreas especiais do portal. No cadastro, omitir significa não informada. No PATCH, omitir preserva e null limpa. Não informado é apenas o rótulo de null, nunca um código. Rótulos: " + Object.entries(regiaoLabels).map(([code, label]) => `${code} → ${label}`).join("; ") + ".",
@@ -20,6 +14,69 @@ const factFields = { rotulo: { type: "string", minLength: 1 }, valor: { type: "s
 const linkFields = { patrimonioDestinoId: string("UUID do destino existente", { format: "uuid" }), texto: sectionFields.texto, ordem: sectionFields.ordem };
 
 export const schemas = {
+    Dashboard: {
+        type: "object", additionalProperties: false, required: ["totalPatrimonios", "porCategoria", "localizacao", "meta"],
+        properties: {
+            totalPatrimonios: { type: "integer", minimum: 0, description: "Total geral cadastrado: RASCUNHO, PUBLICADO e ARQUIVADO. Substitui totalPublicados no contrato." },
+            porCategoria: {
+                type: "object", required: ["disponivel", "dados"],
+                properties: {
+                    disponivel: { type: "boolean", enum: [true] },
+                    dados: { type: "array", description: "Todos os status, categoria principal apenas, ordenada por nome e ID. Sem patrimônios, lista vazia.", items: {
+                        type: "object", required: ["id", "nome", "quantidade", "percentual"],
+                        properties: {
+                            id: { type: "string", format: "uuid" }, nome: { type: "string" },
+                            quantidade: { type: "integer", minimum: 1 },
+                            percentual: { type: "number", minimum: 0, maximum: 100, description: "Quantidade / totalPatrimonios × 100, arredondado a duas casas decimais. A soma pode diferir de 100 pelo arredondamento." },
+                        },
+                    } },
+                },
+            },
+            localizacao: {
+                type: "object", required: ["bairros", "regioes"],
+                properties: {
+                    bairros: {
+                        type: "object", required: ["disponivel", "totalBairrosDistintos", "distribuicao"],
+                        properties: {
+                            disponivel: { type: "boolean", enum: [true] },
+                            totalBairrosDistintos: { type: "integer", minimum: 0, description: "Bairros distintos após trim; o grupo sintético Não informado não conta como bairro real." },
+                            distribuicao: { type: "array", description: "Todos os status, ordenada por bairro. Sem localização ou com bairro vazio/nulo entra uma única vez em Não informado. Sem patrimônios, lista vazia. Bairro é obrigatório no schema atual; nulo é tratado defensivamente.", items: {
+                                type: "object", required: ["bairro", "quantidade"],
+                                properties: { bairro: { type: "string" }, quantidade: { type: "integer", minimum: 1 } },
+                            } },
+                        },
+                    },
+                    regioes: {
+                        type: "object", additionalProperties: false, required: ["disponivel", "totalRegioesDistintas", "distribuicao"],
+                        properties: {
+                            disponivel: { type: "boolean", enum: [true] },
+                            totalRegioesDistintas: { type: "integer", minimum: 0, description: "Classificações com patrimônios associados, excluindo Não informado. Inclui as áreas especiais Aeroporto e Parque Estadual da Cantareira." },
+                            distribuicao: { type: "array", description: "Todos os status. Grupos conhecidos ordenados pelo nome em pt-BR; Não informado ao final. Cada patrimônio conta uma vez: região null ou ausência de localização entram no mesmo grupo. Somente quantidades positivas; soma igual a totalPatrimonios. Banco vazio retorna [].", items: {
+                                type: "object", additionalProperties: false, required: ["regiao", "nome", "quantidade"],
+                                properties: {
+                                    regiao: { ...regiaoField, description: "Código da classificação territorial, ou null para Não informado. Os primeiros 11 códigos são UPRs de referência do projeto; os dois últimos são áreas especiais do portal." },
+                                    nome: { type: "string", enum: [...Object.values(regiaoLabels), "Não informado"], description: "Rótulo do código conforme x-enum-labels de regiao; null usa Não informado." },
+                                    quantidade: { type: "integer", minimum: 1 },
+                                },
+                            } },
+                        },
+                    },
+                },
+            },
+            meta: {
+                type: "object", required: ["parcial", "baseContagem", "pendencias"],
+                properties: {
+                    parcial: { type: "boolean", enum: [false], description: "Escopo reduzido concluído: total, categorias, bairros e regiões. Tombamento e rotas retirados desta entrega; não representa atendimento integral à seção 5.5 original." },
+                    baseContagem: { type: "string", enum: ["TODOS_OS_STATUS"] },
+                    pendencias: { type: "array", maxItems: 0, items: { type: "object" }, description: "Sempre vazia no escopo reduzido desta entrega." },
+                },
+            },
+        },
+    },
+    DashboardResponse: {
+        type: "object", required: ["success", "data"],
+        properties: { success: { type: "boolean", enum: [true] }, data: ref("Dashboard") },
+    },
     SystemResponse: { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: { type: "object", required: ["name", "version"], properties: { name: { type: "string" }, version: { type: "string" } } } } },
     HealthResponse: { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: { type: "object", required: ["status"], properties: { status: { type: "string", enum: ["ok"] } } } } },
     Role: { type: "string", enum: ["ADMIN", "EDITOR"] },

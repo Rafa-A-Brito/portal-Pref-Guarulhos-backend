@@ -26,7 +26,46 @@ const localizacao = { id: localId, patrimonioId, endereco: "Rua Exemplo", numero
 const imagem = { id: imagemId, url: "https://example.org/imagem.jpg", titulo: null, textoAlternativo: "Fachada da edificação", principal: true };
 const resumo = { numeroExibicao: 1, ordemExibicao: 0, id: patrimonioId, nome: "Casa da Cultura Exemplo", slug: "casa-da-cultura-exemplo", descricaoResumida: "Edificação histórica em Guarulhos.", situacao: "PRESERVADO", publicadoEm: "2026-09-01T12:00:00.000Z", categoria, categoriasAdicionais: [], localizacao, imagens: [imagem] };
 
+const dashboardVazio = {
+    totalPatrimonios: 0, porCategoria: { disponivel: true, dados: [] },
+    localizacao: {
+        bairros: { disponivel: true, totalBairrosDistintos: 0, distribuicao: [] },
+        regioes: { disponivel: true, totalRegioesDistintas: 0, distribuicao: [] },
+    },
+    meta: { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] },
+};
+
 export const paths = {
+    "/api/admin/dashboard": {
+        get: {
+            tags: ["Dashboard"], summary: "Consulta o dashboard administrativo de todos os patrimônios cadastrados",
+            security: bearerAuth,
+            description: "Acesso administrativo para ADMIN e EDITOR autenticados e ativos, com token Bearer JWT; sem token, token inválido/expirado ou conta inativa retorna 401. Escopo reduzido: total de patrimônios, distribuição por categoria principal (quantidade e percentual), bairros e regiões. Contagens incluem RASCUNHO, PUBLICADO e ARQUIVADO na mesma transação RepeatableRead. Categorias adicionais não duplicam patrimônios; percentuais arredondados a duas casas. Bairros mantêm trim, agrupamento e ordenação atuais. Regiões retornam código e nome em português, ordenadas por nome em pt-BR, com Não informado ao final; região null e ausência de localização entram uma única vez nesse grupo, excluído do total de regiões distintas. Aeroporto e Parque Estadual da Cantareira são áreas especiais incluídas normalmente. Somente grupos com quantidade positiva; soma regional igual ao total. Banco vazio retorna total zero e listas vazias. Tombamento e rotas foram retirados desta entrega; meta.parcial=false indica conclusão do escopo reduzido, sem afirmar atendimento integral à seção 5.5 original. Consultas públicas permanecem restritas a PUBLICADO.",
+            responses: {
+                200: {
+                    description: "Dashboard do escopo reduzido, inclusive quando não há patrimônios cadastrados.",
+                    content: { "application/json": { schema: schema("DashboardResponse"), examples: {
+                        vazio: { summary: "Sem patrimônios cadastrados", value: { success: true, data: dashboardVazio } },
+                        cadastrados: { summary: "Três patrimônios em qualquer status, incluindo um sem bairro/região", value: { success: true, data: {
+                            ...dashboardVazio, totalPatrimonios: 3,
+                            porCategoria: { disponivel: true, dados: [
+                                { id: categoriaId, nome: "Histórico", quantidade: 2, percentual: 66.67 },
+                                { id: "66666666-6666-4666-8666-666666666666", nome: "Religioso", quantidade: 1, percentual: 33.33 },
+                            ] },
+                            localizacao: { regioes: { disponivel: true, totalRegioesDistintas: 1, distribuicao: [
+                                { regiao: "CUMBICA", nome: "Cumbica", quantidade: 2 },
+                                { regiao: null, nome: "Não informado", quantidade: 1 },
+                            ] }, bairros: {
+                                disponivel: true, totalBairrosDistintos: 1,
+                                distribuicao: [{ bairro: "Centro", quantidade: 2 }, { bairro: "Não informado", quantidade: 1 }],
+                            } },
+                        } } },
+                    } } },
+                },
+                401: unauthorized, 403: forbidden, 500: internal,
+            },
+        },
+    },
     "/api": {
         get: {
             tags: ["Sistema"], summary: "Identifica a API", description: "Retorna nome e versão da aplicação.",
