@@ -1,18 +1,8 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../config/prisma.js";
-
-const pendencias = [
-    { indicador: "porTombamento", motivo: "O schema atual não possui campos de tombamento nem relação de proteção com esfera e patrimônio; a modelagem e o indicador estão pendentes." },
-    { indicador: "localizacao.regioes", motivo: "O schema atual não possui região nem associação de bairros a regiões; a definição e o indicador estão pendentes." },
-    { indicador: "rotas", motivo: "Rota e RotaPatrimonio já existem no schema; faltam definir quais rotas são disponíveis/ativas e implementar o indicador. PUBLICADO define publicação, sem regra explícita de atividade." },
-];
+import { regiaoLabels } from "../utils/regiaoPatrimonio.js";
 
 const comparar = (a, b) => a.localeCompare(b, "pt-BR") || (a < b ? -1 : a > b ? 1 : 0);
-const indisponivel = (indicador) => ({
-    disponivel: false,
-    motivo: pendencias.find((item) => item.indicador === indicador).motivo,
-    dados: null,
-});
 
 export async function getDashboard() {
     // Uma mesma fotografia do banco evita divergência entre total e agrupamentos
@@ -22,13 +12,16 @@ export async function getDashboard() {
         let dados = [];
         let distribuicao = [];
         let totalBairrosDistintos = 0;
+        let distribuicaoRegioes = [];
+        let totalRegioesDistintas = 0;
 
         if (totalPatrimonios > 0) {
-            const [gruposCategoria, gruposBairro] = await Promise.all([
+            const [gruposCategoria, gruposBairro, gruposRegiao] = await Promise.all([
                 client.patrimonio.groupBy({ by: ["categoriaId"], _count: { _all: true } }),
                 client.localizacao.groupBy({
                     by: ["bairro"], _count: { _all: true },
                 }),
+                client.localizacao.groupBy({ by: ["regiao"], _count: { _all: true } }),
             ]);
             const categorias = await client.categoria.findMany({
                 where: { id: { in: gruposCategoria.map((item) => item.categoriaId) } },
@@ -62,6 +55,16 @@ export async function getDashboard() {
             }
             distribuicao = [...bairros].map(([bairro, quantidade]) => ({ bairro, quantidade }))
                 .sort((a, b) => comparar(a.bairro, b.bairro));
+
+            distribuicaoRegioes = gruposRegiao
+                .filter((item) => item.regiao !== null && item._count._all > 0)
+                .map((item) => ({ regiao: item.regiao, nome: regiaoLabels[item.regiao], quantidade: item._count._all }))
+                .sort((a, b) => comparar(a.nome, b.nome));
+            totalRegioesDistintas = distribuicaoRegioes.length;
+            // A relação 1:1 garante uma contagem por patrimônio. Subtrair só os
+            // classificados reúne região nula e ausência de localização sem duplicação.
+            const semRegiao = totalPatrimonios - distribuicaoRegioes.reduce((sum, item) => sum + item.quantidade, 0);
+            if (semRegiao > 0) distribuicaoRegioes.push({ regiao: null, nome: "Não informado", quantidade: semRegiao });
         }
 
         return {
@@ -69,11 +72,9 @@ export async function getDashboard() {
             porCategoria: { disponivel: true, dados },
             localizacao: {
                 bairros: { disponivel: true, totalBairrosDistintos, distribuicao },
-                regioes: indisponivel("localizacao.regioes"),
+                regioes: { disponivel: true, totalRegioesDistintas, distribuicao: distribuicaoRegioes },
             },
-            porTombamento: indisponivel("porTombamento"),
-            rotas: indisponivel("rotas"),
-            meta: { parcial: pendencias.length > 0, baseContagem: "TODOS_OS_STATUS", pendencias: pendencias.map((item) => ({ ...item })) },
+            meta: { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] },
         };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }

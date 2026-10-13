@@ -281,6 +281,9 @@ Para consultar `GET /api/admin/dashboard` com acesso ADMIN ou EDITOR e executar 
 O dashboard usa `totalPatrimonios` e `meta.baseContagem: "TODOS_OS_STATUS"`,
 incluindo rascunhos, publicados e arquivados. O campo anterior `totalPublicados`
 foi substituído; as consultas públicas continuam restritas a publicados.
+O escopo reduzido inclui total, categorias principais, bairros e regiões;
+tombamento e rotas foram retirados desta entrega. `meta.parcial: false` e
+pendências vazias indicam conclusão desse escopo, não da seção 5.5 original inteira.
 
 Contribuições são bem-vindas! Para contribuir:
 

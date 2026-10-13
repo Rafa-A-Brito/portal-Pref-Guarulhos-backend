@@ -46,52 +46,73 @@ a soma de **todos** os grupos de localização representa os sem localização.
 `bairro` é obrigatório no schema atual; o caso nulo é tratado defensivamente
 e coberto por mock, sem mudar o schema.
 
-Sem patrimônios cadastrados, o endpoint retorna HTTP 200, total zero e listas vazias nos
-indicadores implementados. Os indicadores pendentes continuam indisponíveis,
-independentemente de haver registros:
+## Escopo desta entrega
 
-| Indicador | Pendência |
-| --- | --- |
-| `porTombamento` | Não há esfera de tombamento nem relação entre patrimônio e proteção. Modelagem e implementação pendentes. |
-| `localizacao.regioes` | Não há região nem associação bairro/região; definição e implementação pendentes. |
-| `rotas` | `Rota` e `RotaPatrimonio` já existem; falta definir quais rotas são disponíveis/ativas e implementar o indicador e obtenção dos pontos. |
+O dashboard apresenta somente total de patrimônios, distribuição por categoria
+principal (quantidade e percentual), distribuição por bairro e distribuição por
+região. Tombamento e rotas foram retirados desta entrega e não aparecem na
+resposta, nem como placeholders ou pendências. Os modelos e funcionalidades de
+rotas nas demais partes do projeto permanecem.
 
-Todos retornam `disponivel: false`, `motivo` e `dados: null`.
-`meta.parcial` é calculado pela presença de pendências (atualmente `true`),
-`meta.baseContagem` é `TODOS_OS_STATUS` e `meta.pendencias`
-lista esses três indicadores e seus motivos. Nenhum indicador pendente é
-substituído por zero.
+`meta` retorna `{ "parcial": false, "baseContagem": "TODOS_OS_STATUS", "pendencias": [] }`.
+Isso indica conclusão do **escopo reduzido**, não atendimento integral à seção
+5.5 original.
 
-## Propostas mínimas para revisão
+## Regiões
 
-Nenhuma destas propostas foi aplicada ao schema ou às migrations:
+`localizacao.regioes` está sempre disponível e retorna `totalRegioesDistintas`
+e `distribuicao`, com `regiao` (código do enum ou `null`), `nome` (rótulo em
+português) e `quantidade`. Os [códigos e rótulos territoriais](classificacao-territorial.md)
+são compartilhados pelo service e pelo Swagger. São 11 UPRs de referência do
+projeto e duas áreas especiais: Aeroporto e Parque Estadual da Cantareira,
+incluídas normalmente na distribuição e no total de classificações distintas.
 
-- **Tombamento:** adicionar uma relação de proteção com `patrimonioId` (FK para
-  `Patrimonio`) e `esfera`, com enum a confirmar, inicialmente municipal,
-  estadual e federal. Uma chave composta `(patrimonioId, esfera)` é suficiente
-  para a necessidade estatística atual. Se posteriormente forem registrados
-  vários atos na mesma esfera, o indicador deverá agrupar por esfera e
-  patrimônio antes de contar. O mesmo patrimônio poderá entrar em várias
-  esferas. Não inferir proteção de `historia`, `descricao` ou `situacao`.
-- **Regiões:** adicionar `Localizacao.regiao` opcional, preenchido a partir de
-  uma classificação oficial definida pelo responsável pelo acervo. É a menor
-  alteração; um cadastro `Regiao` e FK pode ser adotado depois se for necessária
-  uma lista controlada. Não inferir região pelo bairro. O indicador futuro
-  deverá usar todos os status, contando somente regiões reais como distintas.
-- **Rotas:** decidir explicitamente o que significa disponível/ativa: se basta
-  publicação, se a rota precisa conter pontos, quais status de patrimônio podem
-  ser pontos, e como tratar pontos sem coordenadas. `Rota.status` hoje representa
-  publicação; o filtro das rotas relacionadas no detalhe público do patrimônio
-  não estabelece uma regra de atividade. Não existe endpoint de detalhes de rota
-  no backend atual. Após essa decisão, os modelos existentes permitem obter
-  ID/nome da rota, `RotaPatrimonio.ordem`, ID/nome do patrimônio e latitude/longitude
-  opcionais de `Localizacao`. Um futuro endpoint de detalhes pode fornecer os
-  pontos ao frontend, evitando duplicar uma lista extensa no dashboard.
-  Coordenadas ausentes devem permanecer ausentes; trajetos temporários de
-  visitantes não são rotas cadastradas.
+A consulta usa `Localizacao.groupBy` por `regiao` e contagens, sem carregar
+patrimônios completos e sem filtro de status, na mesma transação `RepeatableRead`
+das demais consultas. `patrimonioId` é único em localização: cada patrimônio é
+contado uma vez. A diferença entre `totalPatrimonios` e a soma dos grupos com
+região preenchida reúne patrimônios sem localização e com região `null` no único
+grupo `{ "regiao": null, "nome": "Não informado", "quantidade": ... }`, sem duplicação.
 
-Até essas dependências serem resolvidas, o dashboard permanece parcial e não
-expõe contagens nem pontos inventados para esses indicadores.
+Somente classificações com patrimônios associados contam em `totalRegioesDistintas`;
+“Não informado” fica fora desse total e é apenas um rótulo de `null`.
+Os grupos conhecidos são ordenados pelo nome em português (`pt-BR`) e “Não
+informado” fica ao final. Não aparecem grupos com quantidade zero. A soma da
+distribuição regional é igual a `totalPatrimonios`. Nenhuma região é inferida ou
+preenchida automaticamente.
+
+Sem patrimônios, o endpoint retorna HTTP 200, total zero e listas vazias,
+inclusive `regioes: { "disponivel": true, "totalRegioesDistintas": 0, "distribuicao": [] }`.
+Com patrimônios, mas sem nenhuma classificação preenchida, retorna somente o
+grupo “Não informado”, com a quantidade total e `totalRegioesDistintas: 0`.
+
+Exemplo ilustrativo da resposta, com três patrimônios:
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalPatrimonios": 3,
+    "porCategoria": {
+      "disponivel": true,
+      "dados": [{ "id": "48aa8522-76c4-459b-b86b-8149a74a54fd", "nome": "Histórico", "quantidade": 3, "percentual": 100 }]
+    },
+    "localizacao": {
+      "bairros": {
+        "disponivel": true,
+        "totalBairrosDistintos": 1,
+        "distribuicao": [{ "bairro": "Centro", "quantidade": 2 }, { "bairro": "Não informado", "quantidade": 1 }]
+      },
+      "regioes": {
+        "disponivel": true,
+        "totalRegioesDistintas": 1,
+        "distribuicao": [{ "regiao": "CUMBICA", "nome": "Cumbica", "quantidade": 2 }, { "regiao": null, "nome": "Não informado", "quantidade": 1 }]
+      }
+    },
+    "meta": { "parcial": false, "baseContagem": "TODOS_OS_STATUS", "pendencias": [] }
+  }
+}
+```
 
 ## Testes
 
@@ -110,7 +131,11 @@ Também verificam acesso ADMIN e EDITOR, token ausente/inválido,
 conta inativa/inexistente e remoção da rota pública anterior.
 As fixtures simuladas abrangem todos os status, alteração de status sem mudança
 no total, filtro público preservado, percentuais, normalização de bairros e
-contagens sem duplicação. Os testes confirmam a opção `RepeatableRead` solicitada
+contagens sem duplicação. Regiões cobrem todos os códigos e nomes, áreas especiais,
+ordenação pt-BR, região nula, ausência de localização, mistura dos dois casos,
+quantidades positivas, soma igual ao total e banco vazio. Também verificam a
+remoção de tombamento/rotas, `meta.parcial: false` e pendências vazias, e validam
+o contrato OpenAPI e seus exemplos. Os testes confirmam a opção `RepeatableRead` solicitada
 ao Prisma; mocks não comprovam o isolamento nem o SQL no banco real.
 
 Para validar PostgreSQL, use um banco exclusivo de testes com o schema/migrations

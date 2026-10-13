@@ -29,7 +29,7 @@ after(async () => {
     }
 });
 
-function mockPrisma({ totalPatrimonios, gruposCategoria = [], categorias = [], gruposBairro = [], usuario }) {
+function mockPrisma({ totalPatrimonios, gruposCategoria = [], categorias = [], gruposBairro = [], gruposRegiao = [], usuario }) {
     const originalTransaction = prisma.$transaction;
     const originalCount = prisma.patrimonio.count;
     const originalGroupByPatrimonio = prisma.patrimonio.groupBy;
@@ -65,10 +65,11 @@ function mockPrisma({ totalPatrimonios, gruposCategoria = [], categorias = [], g
         return categorias;
     };
     prisma.localizacao.groupBy = async (args) => {
-        assert.deepEqual(args.by, ["bairro"]);
+        assert.ok(["bairro", "regiao"].includes(args.by[0]));
+        assert.equal(args.by.length, 1);
         assert.equal(args.where, undefined);
         assert.deepEqual(args._count, { _all: true });
-        return gruposBairro;
+        return args.by[0] === "bairro" ? gruposBairro : gruposRegiao;
     };
 
     return () => {
@@ -94,6 +95,7 @@ test("todos os status entram no dashboard; publicar/arquivar não muda o total; 
         totalPatrimonios: 3,
         gruposCategoria: [{ categoriaId, _count: { _all: 3 } }],
         categorias: [{ id: categoriaId, nome: "Histórico" }],
+        gruposRegiao: [{ regiao: "CUMBICA", _count: { _all: 3 } }],
         gruposBairro: [
             { bairro: "Centro", _count: { _all: 1 } },
             { bairro: " Centro ", _count: { _all: 1 } },
@@ -114,6 +116,7 @@ test("todos os status entram no dashboard; publicar/arquivar não muda o total; 
         assert.equal(inicial.totalPatrimonios, 3);
         assert.equal(inicial.totalPublicados, undefined);
         assert.equal(inicial.meta.baseContagem, "TODOS_OS_STATUS");
+        assert.deepEqual(inicial.localizacao.regioes.distribuicao, [{ regiao: "CUMBICA", nome: "Cumbica", quantidade: 3 }]);
         assert.deepEqual(inicial.porCategoria.dados, [{ id: categoriaId, nome: "Histórico", quantidade: 3, percentual: 100 }]);
         assert.deepEqual(inicial.localizacao.bairros.distribuicao, [
             { bairro: "Centro", quantidade: 2 }, { bairro: "Não informado", quantidade: 1 },
@@ -220,6 +223,9 @@ test("banco sem patrimônios retorna total zero e listas vazias", { concurrency:
             totalBairrosDistintos: 0,
             distribuicao: [],
         });
+        assert.deepEqual(resultado.localizacao.regioes, { disponivel: true, totalRegioesDistintas: 0, distribuicao: [] });
+        assert.deepEqual(resultado.meta, { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] });
+        assert.deepEqual(Object.keys(resultado).sort(), ["localizacao", "meta", "porCategoria", "totalPatrimonios"]);
     } finally {
         restore();
     }
@@ -281,43 +287,53 @@ test("patrimônios sem localização caem no grupo 'Não informado' e não conta
     }
 });
 
-test("indicadores pendentes aparecem como indisponíveis, nunca como zero", { concurrency: false }, async () => {
-    const restore = mockPrisma({ totalPatrimonios: 0 });
 
+test("regiões usam todos os códigos e nomes, ordenação pt-BR e Não informado ao final", { concurrency: false }, async () => {
+    const expected = [
+        ["AEROPORTO", "Aeroporto"], ["BONSUCESSO", "Bonsucesso"], ["CABUCU", "Cabuçu"],
+        ["CAPELINHA", "Capelinha"], ["CENTRO", "Centro"], ["CUMBICA", "Cumbica"],
+        ["JAGUARI", "Jaguari"], ["PARQUE_ESTADUAL_CANTAREIRA", "Parque Estadual da Cantareira"],
+        ["PIMENTAS", "Pimentas"], ["SAO_JOAO", "São João"], ["TABOAO", "Taboão"],
+        ["TANQUE_GRANDE", "Tanque Grande"], ["VILA_GALVAO", "Vila Galvão"],
+    ];
+    const restore = mockPrisma({
+        totalPatrimonios: 15,
+        gruposRegiao: [...expected].reverse().map(([regiao]) => ({ regiao, _count: { _all: 1 } })),
+    });
     try {
-        const resultado = await getDashboard();
-
-        assert.deepEqual(resultado.porTombamento, {
-            disponivel: false,
-            motivo: resultado.porTombamento.motivo,
-            dados: null,
+        const result = await getDashboard();
+        assert.deepEqual(result.localizacao.regioes, {
+            disponivel: true, totalRegioesDistintas: 13,
+            distribuicao: [...expected.map(([regiao, nome]) => ({ regiao, nome, quantidade: 1 })),
+                { regiao: null, nome: "Não informado", quantidade: 2 }],
         });
-        assert.ok(resultado.porTombamento.motivo.length > 0);
-
-        assert.equal(resultado.localizacao.regioes.disponivel, false);
-        assert.equal(resultado.rotas.disponivel, false);
-        for (const item of [resultado.porTombamento, resultado.localizacao.regioes, resultado.rotas]) {
-            assert.equal(item.dados, null);
-            assert.ok(item.motivo.length > 0);
-        }
-        assert.match(resultado.rotas.motivo, /já existem.*disponíveis\/ativas.*implementar/);
-        assert.match(resultado.rotas.motivo, /sem regra explícita de atividade/);
-        assert.match(resultado.porTombamento.motivo, /não possui campos de tombamento/);
-        assert.match(resultado.localizacao.regioes.motivo, /não possui região/);
-
-        assert.equal(resultado.meta.parcial, true);
-        assert.equal(resultado.meta.baseContagem, "TODOS_OS_STATUS");
-        assert.deepEqual(
-            resultado.meta.pendencias.map((p) => p.indicador),
-            ["porTombamento", "localizacao.regioes", "rotas"]
-        );
-        assert.deepEqual(resultado.meta.pendencias.map((item) => item.motivo), [
-            resultado.porTombamento.motivo, resultado.localizacao.regioes.motivo, resultado.rotas.motivo,
-        ]);
-    } finally {
-        restore();
-    }
+        assert.equal(result.localizacao.regioes.distribuicao.reduce((sum, item) => sum + item.quantidade, 0), result.totalPatrimonios);
+    } finally { restore(); }
 });
+
+for (const caso of [
+    { nome: "vários na mesma região", total: 8, grupos: [["CUMBICA", 8]], expected: [["CUMBICA", "Cumbica", 8]], distintas: 1 },
+    { nome: "somente região nula", total: 2, grupos: [[null, 2]], expected: [[null, "Não informado", 2]], distintas: 0 },
+    { nome: "somente sem localização", total: 2, grupos: [], expected: [[null, "Não informado", 2]], distintas: 0 },
+    { nome: "nula e sem localização sem duplicação", total: 5, grupos: [[null, 3]], expected: [[null, "Não informado", 5]], distintas: 0 },
+    { nome: "classificadas, nulas e sem localização", total: 10, grupos: [[null, 2], ["CUMBICA", 5], ["CENTRO", 1]], expected: [["CENTRO", "Centro", 1], ["CUMBICA", "Cumbica", 5], [null, "Não informado", 4]], distintas: 2 },
+    { nome: "não inclui grupo zero nem Não informado sem associados", total: 1, grupos: [["CUMBICA", 1], ["CENTRO", 0], [null, 0]], expected: [["CUMBICA", "Cumbica", 1]], distintas: 1 },
+]) {
+    test(`distribuição regional: ${caso.nome}`, { concurrency: false }, async () => {
+        const restore = mockPrisma({ totalPatrimonios: caso.total, gruposRegiao: caso.grupos.map(([regiao, count]) => ({ regiao, _count: { _all: count } })) });
+        try {
+            const result = await getDashboard();
+            assert.deepEqual(result.localizacao.regioes, {
+                disponivel: true, totalRegioesDistintas: caso.distintas,
+                distribuicao: caso.expected.map(([regiao, nome, quantidade]) => ({ regiao, nome, quantidade })),
+            });
+            assert.equal(result.localizacao.regioes.distribuicao.reduce((sum, item) => sum + item.quantidade, 0), result.totalPatrimonios);
+            assert.equal(Object.hasOwn(result, "porTombamento"), false);
+            assert.equal(Object.hasOwn(result, "rotas"), false);
+            assert.deepEqual(result.meta, { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] });
+        } finally { restore(); }
+    });
+}
 
 for (const role of ["ADMIN", "EDITOR"]) {
 test(`${role} recebe indicadores pelo GET /api/admin/dashboard`, { concurrency: false }, async () => {
@@ -327,6 +343,7 @@ test(`${role} recebe indicadores pelo GET /api/admin/dashboard`, { concurrency: 
         gruposCategoria: [{ categoriaId, _count: { _all: 3 } }],
         categorias: [{ id: categoriaId, nome: "Histórico" }],
         gruposBairro: [{ bairro: "Centro", _count: { _all: 2 } }],
+        gruposRegiao: [{ regiao: "CUMBICA", _count: { _all: 2 } }],
     });
 
     try {
@@ -337,10 +354,16 @@ test(`${role} recebe indicadores pelo GET /api/admin/dashboard`, { concurrency: 
         assert.equal(body.success, true);
         assert.deepEqual(body.data, await getDashboard());
         assert.equal(body.data.totalPatrimonios, 3);
+        assert.deepEqual(body.data.localizacao.regioes, {
+            disponivel: true, totalRegioesDistintas: 1,
+            distribuicao: [{ regiao: "CUMBICA", nome: "Cumbica", quantidade: 2 }, { regiao: null, nome: "Não informado", quantidade: 1 }],
+        });
         assert.deepEqual(body.data.porCategoria.dados, [
             { id: categoriaId, nome: "Histórico", quantidade: 3, percentual: 100 },
         ]);
-        assert.equal(body.data.meta.parcial, true);
+        assert.deepEqual(body.data.meta, { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] });
+        assert.equal(Object.hasOwn(body.data, "porTombamento"), false);
+        assert.equal(Object.hasOwn(body.data, "rotas"), false);
     } finally {
         restore();
     }

@@ -20,6 +20,7 @@ test("PostgreSQL: dashboard ADMIN/EDITOR conta todos os status; transições pre
     const { default: prisma } = await import("../src/config/prisma.js");
     const { generateToken } = await import("../src/utils/token.js");
     const { changePatrimonioStatus } = await import("../src/services/patrimonioService.js");
+    const { getDashboard } = await import("../src/services/dashboardService.js");
     const key = randomUUID();
     const bairro = `dashboard-${key}`;
     const bairroOculto = `oculto-${key}`;
@@ -35,19 +36,21 @@ test("PostgreSQL: dashboard ADMIN/EDITOR conta todos os status; transições pre
             categorias.push(await prisma.categoria.create({ data: { nome: `${key}-${suffix}`, slug: `${key}-${suffix}` } }));
         }
         const [principal, adicional] = categorias;
+        const regionalBaseline = (await getDashboard()).localizacao.regioes.distribuicao;
+        const previous = (regiao) => regionalBaseline.find((item) => item.regiao === regiao)?.quantidade ?? 0;
         const fixtures = [
-            { status: "PUBLICADO", bairro },
-            { status: "PUBLICADO", bairro: ` ${bairro} ` },
-            { status: "PUBLICADO", bairro: "" },
+            { status: "PUBLICADO", bairro, regiao: "CUMBICA" },
+            { status: "PUBLICADO", bairro: ` ${bairro} `, regiao: "CUMBICA" },
+            { status: "PUBLICADO", bairro: "", regiao: null },
             { status: "PUBLICADO" }, // Sem localização.
-            { status: "RASCUNHO", bairro: bairroOculto },
-            { status: "ARQUIVADO", bairro: bairroOculto },
+            { status: "RASCUNHO", bairro: bairroOculto, regiao: "CUMBICA" },
+            { status: "ARQUIVADO", bairro: bairroOculto, regiao: "SAO_JOAO" },
         ];
         for (const [index, fixture] of fixtures.entries()) {
             patrimonios.push(await prisma.patrimonio.create({ data: {
                 nome: `${key}-${index}`, slug: `${key}-${index}`, descricao: "Teste", descricaoResumida: "Teste",
                 categoriaId: principal.id, createdBy: user.id, status: fixture.status,
-                ...(fixture.bairro !== undefined && { localizacao: { create: { endereco: "Rua de teste", bairro: fixture.bairro } } }),
+                ...(fixture.bairro !== undefined && { localizacao: { create: { endereco: "Rua de teste", bairro: fixture.bairro, regiao: fixture.regiao } } }),
                 categoriasAdicionais: { create: { categoriaId: adicional.id } },
             } }));
         }
@@ -73,6 +76,16 @@ test("PostgreSQL: dashboard ADMIN/EDITOR conta todos os status; transições pre
         assert.equal(bairros.distribuicao.reduce((sum, item) => sum + item.quantidade, 0), data.totalPatrimonios);
         assert.equal(data.meta.baseContagem, "TODOS_OS_STATUS");
         assert.equal(data.totalPublicados, undefined);
+        const regioes = data.localizacao.regioes;
+        assert.equal(regioes.disponivel, true);
+        assert.equal(regioes.distribuicao.find((item) => item.regiao === "CUMBICA").quantidade, previous("CUMBICA") + 3);
+        assert.equal(regioes.distribuicao.find((item) => item.regiao === "SAO_JOAO").quantidade, previous("SAO_JOAO") + 1);
+        assert.equal(regioes.distribuicao.find((item) => item.regiao === null).quantidade, previous(null) + 2);
+        assert.equal(regioes.distribuicao.reduce((sum, item) => sum + item.quantidade, 0), data.totalPatrimonios);
+        assert.equal(regioes.totalRegioesDistintas, regioes.distribuicao.filter((item) => item.regiao !== null).length);
+        assert.deepEqual(data.meta, { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] });
+        assert.equal(Object.hasOwn(data, "porTombamento"), false);
+        assert.equal(Object.hasOwn(data, "rotas"), false);
 
         const base = `http://127.0.0.1:${server.address().port}`;
         const consultarDashboard = async () => {
@@ -105,6 +118,7 @@ test("PostgreSQL: dashboard ADMIN/EDITOR conta todos os status; transições pre
         const editorBody = await editorResponse.json();
         assert.equal(editorBody.success, true);
         assert.equal(editorBody.data.porCategoria.dados.find((item) => item.id === principal.id).quantidade, 6);
+        assert.deepEqual(editorBody.data.localizacao.regioes, regioes);
     } finally {
         try {
             if (server) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

@@ -54,10 +54,32 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
     assert.ok(dashboardSchema.required.includes("totalPatrimonios"));
     assert.equal(dashboardSchema.properties.totalPublicados, undefined);
     assert.deepEqual(dashboardSchema.properties.meta.properties.baseContagem.enum, ["TODOS_OS_STATUS"]);
+    assert.deepEqual(dashboardSchema.properties.meta.properties.parcial.enum, [false]);
+    assert.equal(dashboardSchema.properties.meta.properties.pendencias.maxItems, 0);
+    assert.deepEqual(Object.keys(dashboardSchema.properties).sort(), ["localizacao", "meta", "porCategoria", "totalPatrimonios"]);
+    assert.equal(openapi.components.schemas.DashboardIndicadorPendente, undefined);
+    const regionalSchema = dashboardSchema.properties.localizacao.properties.regioes;
+    assert.deepEqual(regionalSchema.required, ["disponivel", "totalRegioesDistintas", "distribuicao"]);
+    assert.deepEqual(regionalSchema.properties.disponivel.enum, [true]);
+    const regionalItem = regionalSchema.properties.distribuicao.items;
+    assert.deepEqual(regionalItem.required, ["regiao", "nome", "quantidade"]);
+    assert.equal(regionalItem.properties.regiao.nullable, true);
+    assert.equal(regionalItem.properties.quantidade.minimum, 1);
     for (const example of Object.values(dashboard.responses[200].content["application/json"].examples)) {
         assert.equal(example.value.data.meta.baseContagem, "TODOS_OS_STATUS");
         assert.equal(example.value.data.totalPublicados, undefined);
         assert.ok(Number.isInteger(example.value.data.totalPatrimonios));
+        assert.deepEqual(example.value.data.meta, { parcial: false, baseContagem: "TODOS_OS_STATUS", pendencias: [] });
+        assert.equal(Object.hasOwn(example.value.data, "porTombamento"), false);
+        assert.equal(Object.hasOwn(example.value.data, "rotas"), false);
+        const regions = example.value.data.localizacao.regioes;
+        assert.equal(regions.disponivel, true);
+        assert.equal(regions.distribuicao.reduce((sum, item) => sum + item.quantidade, 0), example.value.data.totalPatrimonios);
+        assert.equal(regions.totalRegioesDistintas, regions.distribuicao.filter((item) => item.regiao !== null).length);
+        for (const item of regions.distribuicao) {
+            assert.ok(item.quantidade > 0);
+            assert.equal(item.nome, item.regiao === null ? "Não informado" : regionalItem.properties.regiao["x-enum-labels"][item.regiao]);
+        }
     }
     assert.equal(openapi.components.schemas.PatrimonioRequest.required.includes("descricao"), false);
     assert.equal(openapi.components.schemas.PatrimonioDetalhe.properties.descricao.nullable, true);

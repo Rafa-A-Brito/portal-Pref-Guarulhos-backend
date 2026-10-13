@@ -1,11 +1,5 @@
 import { RegiaoPatrimonio } from "@prisma/client";
-
-const regiaoLabels = {
-    CENTRO: "Centro", VILA_GALVAO: "Vila Galvão", TABOAO: "Taboão", SAO_JOAO: "São João",
-    CUMBICA: "Cumbica", PIMENTAS: "Pimentas", BONSUCESSO: "Bonsucesso", CABUCU: "Cabuçu",
-    TANQUE_GRANDE: "Tanque Grande", CAPELINHA: "Capelinha", JAGUARI: "Jaguari",
-    AEROPORTO: "Aeroporto", PARQUE_ESTADUAL_CANTAREIRA: "Parque Estadual da Cantareira",
-};
+import { regiaoLabels } from "../utils/regiaoPatrimonio.js";
 const regiaoField = {
     type: "string", nullable: true, enum: [...Object.values(RegiaoPatrimonio), null],
     description: "Classificação territorial opcional, separada do bairro. Os primeiros 11 códigos representam as UPRs adotadas como referência pelo projeto; Aeroporto e Parque Estadual da Cantareira são áreas especiais do portal. No cadastro, omitir significa não informada. No PATCH, omitir preserva e null limpa. Não informado é apenas o rótulo de null, nunca um código. Rótulos: " + Object.entries(regiaoLabels).map(([code, label]) => `${code} → ${label}`).join("; ") + ".",
@@ -20,16 +14,8 @@ const factFields = { rotulo: { type: "string", minLength: 1 }, valor: { type: "s
 const linkFields = { patrimonioDestinoId: string("UUID do destino existente", { format: "uuid" }), texto: sectionFields.texto, ordem: sectionFields.ordem };
 
 export const schemas = {
-    DashboardIndicadorPendente: {
-        type: "object", required: ["disponivel", "motivo", "dados"],
-        properties: {
-            disponivel: { type: "boolean", enum: [false] },
-            motivo: { type: "string", minLength: 1 },
-            dados: { type: "object", nullable: true, enum: [null], description: "Sempre null enquanto o indicador estiver pendente, mesmo com banco vazio." },
-        },
-    },
     Dashboard: {
-        type: "object", required: ["totalPatrimonios", "porCategoria", "localizacao", "porTombamento", "rotas", "meta"],
+        type: "object", additionalProperties: false, required: ["totalPatrimonios", "porCategoria", "localizacao", "meta"],
         properties: {
             totalPatrimonios: { type: "integer", minimum: 0, description: "Total geral cadastrado: RASCUNHO, PUBLICADO e ARQUIVADO. Substitui totalPublicados no contrato." },
             porCategoria: {
@@ -60,23 +46,29 @@ export const schemas = {
                             } },
                         },
                     },
-                    regioes: ref("DashboardIndicadorPendente"),
+                    regioes: {
+                        type: "object", additionalProperties: false, required: ["disponivel", "totalRegioesDistintas", "distribuicao"],
+                        properties: {
+                            disponivel: { type: "boolean", enum: [true] },
+                            totalRegioesDistintas: { type: "integer", minimum: 0, description: "Classificações com patrimônios associados, excluindo Não informado. Inclui as áreas especiais Aeroporto e Parque Estadual da Cantareira." },
+                            distribuicao: { type: "array", description: "Todos os status. Grupos conhecidos ordenados pelo nome em pt-BR; Não informado ao final. Cada patrimônio conta uma vez: região null ou ausência de localização entram no mesmo grupo. Somente quantidades positivas; soma igual a totalPatrimonios. Banco vazio retorna [].", items: {
+                                type: "object", additionalProperties: false, required: ["regiao", "nome", "quantidade"],
+                                properties: {
+                                    regiao: { ...regiaoField, description: "Código da classificação territorial, ou null para Não informado. Os primeiros 11 códigos são UPRs de referência do projeto; os dois últimos são áreas especiais do portal." },
+                                    nome: { type: "string", enum: [...Object.values(regiaoLabels), "Não informado"], description: "Rótulo do código conforme x-enum-labels de regiao; null usa Não informado." },
+                                    quantidade: { type: "integer", minimum: 1 },
+                                },
+                            } },
+                        },
+                    },
                 },
             },
-            porTombamento: ref("DashboardIndicadorPendente"),
-            rotas: ref("DashboardIndicadorPendente"),
             meta: {
                 type: "object", required: ["parcial", "baseContagem", "pendencias"],
                 properties: {
-                    parcial: { type: "boolean", enum: [true] },
+                    parcial: { type: "boolean", enum: [false], description: "Escopo reduzido concluído: total, categorias, bairros e regiões. Tombamento e rotas retirados desta entrega; não representa atendimento integral à seção 5.5 original." },
                     baseContagem: { type: "string", enum: ["TODOS_OS_STATUS"] },
-                    pendencias: { type: "array", minItems: 3, maxItems: 3, items: {
-                        type: "object", required: ["indicador", "motivo"],
-                        properties: {
-                            indicador: { type: "string", enum: ["porTombamento", "localizacao.regioes", "rotas"] },
-                            motivo: { type: "string", minLength: 1 },
-                        },
-                    } },
+                    pendencias: { type: "array", maxItems: 0, items: { type: "object" }, description: "Sempre vazia no escopo reduzido desta entrega." },
                 },
             },
         },
