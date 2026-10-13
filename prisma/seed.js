@@ -193,6 +193,7 @@ const PATRIMONIOS = [
 ];
 
 function localizacaoData(item) {
+    // Omitir regiao também no update do upsert preserva a classificação administrativa.
     if (!item.endereco || !item.bairro) return null;
 
     return {

@@ -12,6 +12,8 @@
 
 Aplicação web interativa para o mapeamento, consulta e preservação da memória dos patrimônios históricos da cidade de Guarulhos. A plataforma permite a navegação por rotas culturais, visualização em mapa interativo via Google Maps, análise de dados estatísticos e mecanismos avançados de pesquisa e filtragem.
 
+Documentação da [classificação territorial dos patrimônios](docs/classificacao-territorial.md): códigos, rótulos, contratos e aplicação da migration.
+
 ---
 
 ## 📖 Sobre o Projeto

@@ -1,5 +1,7 @@
 # Administração de patrimônios
 
+`localizacao.regiao` aceita código territorial ou `null`. No PATCH, omitir preserva a classificação e `null` limpa. Veja os [códigos, rótulos e migration](classificacao-territorial.md).
+
 Com o banco e as variáveis de ambiente configurados, execute `npm run dev`.
 Abra `http://localhost:3333/api/docs` (ou a porta configurada em `PORT`).
 O contrato OpenAPI também está disponível em `/api/docs.json` e pode ser importado no Postman.

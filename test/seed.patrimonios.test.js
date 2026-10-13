@@ -6,7 +6,25 @@ import { tmpdir } from "node:os";
 import { join, basename, resolve, relative, isAbsolute } from "node:path";
 import { runInNewContext } from "node:vm";
 import { PATRIMONIOS, EXPECTED_COUNTS, SOURCE_SHA256 } from "../prisma/data/patrimonios.js";
-import { validateResearch, validateAssets, planImport } from "../prisma/seed.patrimonios.js";
+import { validateResearch, validateAssets, planImport, managedSnapshot } from "../prisma/seed.patrimonios.js";
+
+test("seed omite região dos dados gerenciados e aceita classificação posterior na reexecução", () => {
+    const options = { existing: [], categories: [], user: null, logs: [], baseUrl: "http://localhost:3333" };
+    const first = planImport(options);
+    assert.ok(first.entries.every((entry) => !Object.hasOwn(entry.expected.localizacao, "regiao")));
+    const entry = first.entries[0];
+    const existing = first.entries.map((item) => ({
+        ...item.expected, id: item.id, categoria: { slug: item.expected.categoriaSlug },
+        localizacao: { ...item.expected.localizacao, regiao: "CUMBICA" },
+    }));
+    assert.deepEqual(managedSnapshot(existing[0]), entry.expected);
+    const logs = first.entries.map((item) => ({ entityId: item.id, newValues: { numeroExibicao: item.source.numeroExibicao, managed: item.expected } }));
+    const repeated = planImport({ ...options, existing, logs });
+    assert.deepEqual(repeated.issues, []);
+    assert.equal(repeated.report.jaImportados, 34);
+    assert.equal(repeated.entries[0].current.localizacao.regiao, "CUMBICA");
+    assert.equal(Object.hasOwn(repeated.entries[0].expected.localizacao, "regiao"), false);
+});
 
 test("snapshot fiel ao mock atual, inclusive ausências, ordem e identidade 9/13", async (context) => {
     let raw;

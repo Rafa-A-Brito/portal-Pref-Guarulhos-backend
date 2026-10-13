@@ -3,6 +3,20 @@ import { test } from "node:test";
 import SwaggerParser from "@apidevtools/swagger-parser";
 import openapi from "../src/docs/openapi.js";
 
+test("Swagger documenta região opcional nullable com códigos e rótulos em todos os contratos", async () => {
+    const { RegiaoPatrimonio } = await import("@prisma/client");
+    for (const name of ["LocalizacaoRequest", "LocalizacaoPatch", "Localizacao"]) {
+        const schema = openapi.components.schemas[name];
+        const regiao = schema.properties.regiao;
+        assert.equal(schema.required?.includes("regiao") ?? false, false);
+        assert.equal(regiao.nullable, true);
+        assert.deepEqual(regiao.enum, [...Object.values(RegiaoPatrimonio), null]);
+        assert.deepEqual(Object.keys(regiao["x-enum-labels"]), Object.values(RegiaoPatrimonio));
+        assert.equal(regiao["x-enum-labels"].VILA_GALVAO, "Vila Galvão");
+        assert.equal(regiao.enum.includes("NAO_INFORMADO"), false);
+    }
+});
+
 test("especificação OpenAPI válida, com referências, rotas e autenticação corretas", async () => {
     await SwaggerParser.validate(openapi);
     assert.equal(openapi.openapi, "3.0.3");

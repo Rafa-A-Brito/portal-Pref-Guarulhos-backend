@@ -245,7 +245,7 @@ function locationInput(localizacao) {
     if (!localizacao) return undefined;
     const { id, patrimonioId, ...fields } = localizacao;
     return Object.fromEntries(Object.entries(fields)
-        .filter(([, value]) => value !== null)
+        .filter(([key, value]) => key === "regiao" || value !== null)
         .map(([key, value]) => [key, ["latitude", "longitude"].includes(key) ? Number(value) : value]));
 }
 

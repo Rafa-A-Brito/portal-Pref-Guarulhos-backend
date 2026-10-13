@@ -100,6 +100,8 @@ export const researchInclude = {
 };
 
 export function managedSnapshot(p) {
+    // Região é uma classificação administrativa, fora dos campos gerenciados
+    // pela pesquisa. Omiti-la mantém os snapshots anteriores e a reexecução.
     const loc = p.localizacao;
     return {
         nome: p.nome, slug: p.slug, numeroExibicao: p.numeroExibicao, ordemExibicao: p.ordemExibicao,
@@ -231,6 +233,7 @@ export async function seedPatrimonios(client, { baseUrl, dryRun = false, reconci
             const owned = { nome, numeroExibicao, ordemExibicao, descricaoResumida, situacao, categoriaId: categoryIds.get(e.source.categoria) };
             if (e.current) await tx.patrimonio.update({ where: { id: e.id }, data: owned });
             else await tx.patrimonio.create({ data: { id: e.id, slug: e.slug, ...owned, createdBy: author.id, status: "RASCUNHO" } });
+            // expected.localizacao omite regiao: o upsert preserva classificações existentes.
             await tx.localizacao.upsert({ where: { patrimonioId: e.id }, create: { patrimonioId: e.id, ...e.expected.localizacao }, update: e.expected.localizacao });
         }
         for (const e of pending) {

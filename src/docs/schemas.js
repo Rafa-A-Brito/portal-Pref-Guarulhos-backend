@@ -1,3 +1,17 @@
+import { RegiaoPatrimonio } from "@prisma/client";
+
+const regiaoLabels = {
+    CENTRO: "Centro", VILA_GALVAO: "Vila Galvão", TABOAO: "Taboão", SAO_JOAO: "São João",
+    CUMBICA: "Cumbica", PIMENTAS: "Pimentas", BONSUCESSO: "Bonsucesso", CABUCU: "Cabuçu",
+    TANQUE_GRANDE: "Tanque Grande", CAPELINHA: "Capelinha", JAGUARI: "Jaguari",
+    AEROPORTO: "Aeroporto", PARQUE_ESTADUAL_CANTAREIRA: "Parque Estadual da Cantareira",
+};
+const regiaoField = {
+    type: "string", nullable: true, enum: [...Object.values(RegiaoPatrimonio), null],
+    description: "Classificação territorial opcional, separada do bairro. Os primeiros 11 códigos representam as UPRs adotadas como referência pelo projeto; Aeroporto e Parque Estadual da Cantareira são áreas especiais do portal. No cadastro, omitir significa não informada. No PATCH, omitir preserva e null limpa. Não informado é apenas o rótulo de null, nunca um código. Rótulos: " + Object.entries(regiaoLabels).map(([code, label]) => `${code} → ${label}`).join("; ") + ".",
+    "x-enum-labels": regiaoLabels,
+    example: "CUMBICA",
+};
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 const string = (description, extra = {}) => ({ type: "string", description, ...extra });
 const nullable = (schema) => ({ ...schema, nullable: true });
@@ -53,6 +67,7 @@ export const schemas = {
         type: "object", additionalProperties: false, required: ["endereco", "bairro"],
         description: "Latitude e longitude devem ser informadas juntas ou ambas omitidas. Textos recebem trim.",
         properties: {
+            regiao: regiaoField,
             endereco: string("Endereço", { minLength: 1, maxLength: 250, example: "Rua Exemplo" }),
             numero: string("Número", { minLength: 1, maxLength: 30, example: "10" }),
             complemento: string("Complemento", { minLength: 1, maxLength: 150 }),
@@ -94,6 +109,7 @@ export const schemas = {
     Localizacao: {
         type: "object", required: ["id", "patrimonioId", "endereco", "numero", "complemento", "bairro", "cidade", "uf", "cep", "latitude", "longitude"],
         properties: {
+            regiao: regiaoField,
             id: string("UUID", { format: "uuid" }), patrimonioId: string("UUID", { format: "uuid" }), endereco: { type: "string" },
             numero: nullable({ type: "string" }), complemento: nullable({ type: "string" }), bairro: { type: "string" }, cidade: { type: "string" }, uf: { type: "string" },
             cep: nullable({ type: "string" }), latitude: nullable(string("Decimal serializado como string.", { example: "-23.4628000" })),

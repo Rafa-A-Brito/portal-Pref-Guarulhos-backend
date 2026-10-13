@@ -22,7 +22,7 @@ const usuarioId = "33333333-3333-4333-8333-333333333333";
 const imagemId = "44444444-4444-4444-8444-444444444444";
 const localId = "55555555-5555-4555-8555-555555555555";
 const categoria = { id: categoriaId, nome: "Histórico", slug: "historico" };
-const localizacao = { id: localId, patrimonioId, endereco: "Rua Exemplo", numero: "10", complemento: null, bairro: "Centro", cidade: "Guarulhos", uf: "SP", cep: "07010-000", latitude: "-23.4628000", longitude: "-46.5333000" };
+const localizacao = { id: localId, patrimonioId, endereco: "Rua Exemplo", numero: "10", complemento: null, bairro: "Centro", regiao: null, cidade: "Guarulhos", uf: "SP", cep: "07010-000", latitude: "-23.4628000", longitude: "-46.5333000" };
 const imagem = { id: imagemId, url: "https://example.org/imagem.jpg", titulo: null, textoAlternativo: "Fachada da edificação", principal: true };
 const resumo = { numeroExibicao: 1, ordemExibicao: 0, id: patrimonioId, nome: "Casa da Cultura Exemplo", slug: "casa-da-cultura-exemplo", descricaoResumida: "Edificação histórica em Guarulhos.", situacao: "PRESERVADO", publicadoEm: "2026-09-01T12:00:00.000Z", categoria, categoriasAdicionais: [], localizacao, imagens: [imagem] };
 

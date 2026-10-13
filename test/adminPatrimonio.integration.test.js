@@ -26,9 +26,17 @@ test("PostgreSQL: edição, localização, transições concorrentes e visibilid
         patrimonio = await service.createPatrimonio({ nome: key, descricao: "Descrição", descricaoResumida: "Resumo", categoriaId: categoria.id, categoriasAdicionais: [categoriaAdicional.id] }, user.id);
         const id = patrimonio.id;
         const originalSlug = patrimonio.slug;
+        assert.equal(patrimonio.localizacao, null);
         await assert.rejects(service.getPatrimonioBySlug(originalSlug), { statusCode: 404 });
         await service.updatePatrimonio(id, { nome: `${key} editado`, localizacao: { endereco: "Rua", bairro: "Centro", latitude: -23, longitude: -46 } }, user);
         await service.updatePatrimonio(id, { localizacao: { latitude: -24 } }, user);
+        assert.equal((await service.getAdminPatrimonio(id)).localizacao.regiao, null);
+        await service.updatePatrimonio(id, { localizacao: { regiao: "CUMBICA" } }, user);
+        await service.updatePatrimonio(id, { localizacao: { numero: "10" } }, user);
+        assert.equal((await service.getAdminPatrimonio(id)).localizacao.regiao, "CUMBICA");
+        await service.updatePatrimonio(id, { localizacao: { regiao: null } }, user);
+        assert.equal((await service.getAdminPatrimonio(id)).localizacao.regiao, null);
+        await service.updatePatrimonio(id, { localizacao: { regiao: "CUMBICA" } }, user);
         const edited = await service.getAdminPatrimonio(id);
         assert.deepEqual(edited.categoriasAdicionais.map((item) => item.id), [categoriaAdicional.id]);
         assert.equal(edited.slug, originalSlug);
@@ -53,6 +61,9 @@ test("PostgreSQL: edição, localização, transições concorrentes e visibilid
         assert.equal(published[0].publicadoEm.getTime(), published[1].publicadoEm.getTime());
         assert.equal(published[0].updatedAt.getTime(), published[1].updatedAt.getTime());
         assert.equal((await service.getPatrimonioBySlug(originalSlug)).id, id);
+        assert.equal((await service.getPatrimonioBySlug(originalSlug)).localizacao.regiao, "CUMBICA");
+        assert.equal((await service.listPatrimonios({ busca: key, pagina: 1, limite: 20 })).itens[0].localizacao.regiao, "CUMBICA");
+        assert.equal((await service.listAdminPatrimonios({ busca: key, pagina: 1, limite: 20 })).itens[0].localizacao.regiao, "CUMBICA");
         assert.deepEqual((await service.getPatrimonioBySlug(originalSlug)).categoriasAdicionais.map((item) => item.id), [categoriaAdicional.id]);
         assert.equal((await service.listPatrimonios({ busca: key, pagina: 1, limite: 20 })).itens.length, 1);
         await assert.rejects(service.updatePatrimonio(id, { nome: "Proibido" }, { id: user.id, role: "EDITOR" }), { statusCode: 403 });

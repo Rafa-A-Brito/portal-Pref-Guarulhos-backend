@@ -1,9 +1,10 @@
-import { SituacaoPatrimonio, StatusPublicacao } from "@prisma/client";
+import { RegiaoPatrimonio, SituacaoPatrimonio, StatusPublicacao } from "@prisma/client";
 import { z } from "zod";
 
 const optionalText = (max, message) => z.string().trim().min(1, message).max(max).optional();
 
 const localizacaoFieldsSchema = z.strictObject({
+    regiao: z.enum(Object.values(RegiaoPatrimonio)).nullable().optional(),
     endereco: z.string().trim().min(1, "Informe o endereço.").max(250),
     numero: optionalText(30, "Informe um número válido."),
     complemento: optionalText(150, "Informe um complemento válido."),

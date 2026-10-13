@@ -24,6 +24,24 @@ enum SituacaoPatrimonio {
   @@map("situacao_patrimonio")
 }
 
+enum RegiaoPatrimonio {
+  CENTRO
+  VILA_GALVAO
+  TABOAO
+  SAO_JOAO
+  CUMBICA
+  PIMENTAS
+  BONSUCESSO
+  CABUCU
+  TANQUE_GRANDE
+  CAPELINHA
+  JAGUARI
+  AEROPORTO
+  PARQUE_ESTADUAL_CANTAREIRA
+
+  @@map("regiao_patrimonio")
+}
+
 enum StatusPublicacao {
   RASCUNHO
   PUBLICADO
@@ -149,6 +167,7 @@ model Localizacao {
   numero       String?    @db.VarChar(30)
   complemento  String?    @db.VarChar(150)
   bairro       String     @db.VarChar(100)
+  regiao       RegiaoPatrimonio?
   cidade       String     @default("Guarulhos") @db.VarChar(100)
   uf           String     @default("SP") @db.Char(2)
   cep          String?    @db.VarChar(9)

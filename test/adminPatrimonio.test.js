@@ -63,6 +63,103 @@ async function request(path, { user, method = "GET", body } = {}) {
     return { status: response.status, body: await response.json() };
 }
 
+test("cadastro territorial aceita enum, null e omissão, rejeitando valores inválidos com 400", async (t) => {
+    const { RegiaoPatrimonio } = await import("@prisma/client");
+    const db = database(t);
+    let written;
+    db.tx.patrimonio.findUnique = async () => null;
+    db.tx.patrimonio.create = async ({ data, include }) => {
+        written = data;
+        assert.equal(include.localizacao, true);
+        return record({ ...data, localizacao: data.localizacao ? { regiao: null, ...data.localizacao.create } : null });
+    };
+    const body = { nome: "Teste", descricaoResumida: "Resumo", categoriaId: randomUUID() };
+    for (const regiao of [...Object.values(RegiaoPatrimonio), null, undefined]) {
+        const localizacao = { endereco: "Rua", bairro: "Bairro independente", ...(regiao !== undefined && { regiao }) };
+        const result = await request("/admin/patrimonios", { user: editor, method: "POST", body: { ...body, localizacao } });
+        assert.equal(result.status, 201);
+        assert.equal(written.localizacao.create.regiao, regiao);
+        assert.equal(result.body.data.localizacao.regiao, regiao ?? null);
+        assert.equal(result.body.data.localizacao.bairro, localizacao.bairro);
+    }
+    const withoutLocation = await request("/admin/patrimonios", { user: admin, method: "POST", body });
+    assert.equal(withoutLocation.status, 201);
+    assert.equal(withoutLocation.body.data.localizacao, null);
+    for (const regiao of ["INVALIDA", "Não informado", "cumbica", "", 1, {}, []]) {
+        const result = await request("/admin/patrimonios", { user: admin, method: "POST", body: { ...body, localizacao: { endereco: "Rua", bairro: "Centro", regiao } } });
+        assert.equal(result.status, 400);
+        assert.equal(result.body.error.code, "BAD_REQUEST");
+        assert.ok(result.body.details.some((detail) => detail.field === "localizacao.regiao"));
+    }
+});
+
+test("PATCH territorial isolado preserva omitidos, limpa null e mantém permissões", async (t) => {
+    const location = { endereco: "Rua", bairro: "Centro", cidade: "Guarulhos", uf: "SP", regiao: "CENTRO" };
+    const db = database(t, record({ localizacao: location }));
+    const path = `/admin/patrimonios/${db.state().id}`;
+    const patch = (body, user = editor) => request(path, { user, method: "PATCH", body });
+    assert.equal((await patch({ localizacao: { regiao: "CUMBICA" } })).status, 200);
+    assert.deepEqual(db.writes[0].localizacao, { update: { regiao: "CUMBICA" } });
+    assert.deepEqual(db.state().localizacao, { ...location, regiao: "CUMBICA" });
+    await patch({ nome: "Novo" });
+    await patch({ localizacao: { bairro: "Outro" } });
+    assert.equal(db.state().localizacao.regiao, "CUMBICA");
+    const writes = db.writes.length;
+    for (const regiao of ["INVALIDA", "Não informado", false]) assert.equal((await patch({ localizacao: { regiao } })).status, 400);
+    assert.equal(db.writes.length, writes);
+    const cleared = await patch({ localizacao: { regiao: null } });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.data.localizacao.regiao, null);
+    await patch({ localizacao: { numero: "10" } });
+    assert.equal(db.state().localizacao.regiao, null);
+    for (const status of ["PUBLICADO", "ARQUIVADO"]) {
+        db.state().status = status;
+        assert.equal((await patch({ localizacao: { regiao: "CENTRO" } })).status, 403);
+        assert.equal((await patch({ localizacao: { regiao: "CENTRO" } }, admin)).status, 200);
+    }
+});
+
+test("PATCH cria localização com região e exige endereço/bairro quando inexistente", async (t) => {
+    const db = database(t);
+    const path = `/admin/patrimonios/${db.state().id}`;
+    assert.equal((await request(path, { user: admin, method: "PATCH", body: { localizacao: { regiao: "CUMBICA" } } })).status, 400);
+    assert.equal(db.writes.length, 0);
+    const result = await request(path, { user: admin, method: "PATCH", body: { localizacao: { endereco: "Rua", bairro: "Centro", regiao: "CUMBICA" } } });
+    assert.equal(result.status, 200);
+    assert.equal(db.writes[0].localizacao.create.regiao, "CUMBICA");
+});
+
+test("consultas e publicação preservam códigos territoriais, null e ausência de localização", async (t) => {
+    const db = database(t);
+    stub(t, prisma.patrimonio, "count", async () => 1);
+    stub(t, prisma.patrimonio, "findMany", async ({ select, where }) => {
+        assert.equal(select.localizacao, true);
+        assert.equal(where.status, "PUBLICADO");
+        return [db.state()];
+    });
+    stub(t, prisma.patrimonio, "findFirst", async ({ select, where }) => {
+        assert.equal(select.localizacao, true);
+        assert.equal(where.status, "PUBLICADO");
+        return db.state();
+    });
+    for (const localizacao of [{ endereco: "Rua", bairro: "Centro", regiao: "CUMBICA" }, { endereco: "Rua", bairro: "Centro", regiao: null }, null]) {
+        db.state().localizacao = localizacao;
+        db.state().status = "RASCUNHO";
+        const published = await request(`/admin/patrimonios/${db.state().id}/publicar`, { user: admin, method: "PATCH" });
+        assert.equal(published.status, 200);
+        assert.deepEqual(published.body.data.localizacao, localizacao);
+        for (const path of ["/patrimonios", `/patrimonios/${db.state().slug}`, "/admin/patrimonios?status=PUBLICADO", `/admin/patrimonios/${db.state().id}`]) {
+            const result = await request(path, { user: editor });
+            assert.equal(result.status, 200);
+            assert.deepEqual((result.body.data.itens?.[0] ?? result.body.data).localizacao, localizacao);
+        }
+    }
+    // A reconstrução usada para publicação também valida a região armazenada.
+    db.state().status = "RASCUNHO";
+    db.state().localizacao = { endereco: "Rua", bairro: "Centro", regiao: "INVALIDA" };
+    assert.equal((await request(`/admin/patrimonios/${db.state().id}/publicar`, { user: admin, method: "PATCH" })).status, 400);
+});
+
 test("schemas parciais não introduzem defaults e recusam campos vazios/protegidos", () => {
     assert.deepEqual(schemas.updatePatrimonioSchema.parse({ nome: " Novo " }), { nome: "Novo" });
     assert.deepEqual(schemas.updatePatrimonioSchema.parse({ localizacao: { bairro: "Centro" } }), { localizacao: { bairro: "Centro" } });

@@ -87,6 +87,8 @@ test("carga completa, reexecução, API, constraints e reconciliação em Postgr
             assert.equal((await (await fetch(`${baseUrl}/api/patrimonios`)).json()).data.paginacao.total, 0);
         });
         await context.test("segunda execução mantém todos os UUIDs, slugs, filhos e timestamps", async () => {
+            const classified = await prisma.patrimonio.findUnique({ where: { numeroExibicao: 9 } });
+            await prisma.localizacao.update({ where: { patrimonioId: classified.id }, data: { regiao: "CUMBICA" } });
             const before = JSON.stringify(await records()); const audits = await prisma.auditLog.count();
             const result = await seedPatrimonios(prisma, options);
             assert.equal(result.jaImportados, 34); assert.equal(JSON.stringify(await records()), before);
