@@ -50,6 +50,8 @@ function stub(t, target, method, implementation) {
     t.after(() => { target[method] = original; });
 }
 function banco(t, caso, file, onDelete) {
+    stub(t, prisma, "$transaction", async (callback) => callback(prisma));
+    stub(t, prisma, "$queryRaw", async () => []);
     const midia = { id: randomUUID(), patrimonioId: randomUUID(), url: `${URL_PREFIXO[caso.tipo]}/${path.basename(file.path)}` };
     stub(t, prisma.patrimonio, "findUnique", async () => ({ id: midia.patrimonioId, status: "RASCUNHO" }));
     stub(t, prisma[caso.model], "findFirst", async ({ where }) => {
@@ -75,6 +77,125 @@ function conferirPendencia(entry, acao, midia, file) {
 }
 
 for (const caso of casos) {
+    test(`${caso.tipo}: rollback no commit restaura arquivo sem limpar quarentena antes`, async (t) => {
+        const file = await arquivo(caso);
+        const original = new Error("Commit falhou");
+        let staged;
+        const rename = fs.rename;
+        t.mock.method(fs, "rename", async (from, to) => { staged = to; return rename(from, to); });
+        const midia = banco(t, caso, file);
+        stub(t, prisma, "$transaction", async (callback) => {
+            await callback(prisma);
+            await ausente(file.path);
+            assert.deepEqual(await fs.readFile(staged), caso.bytes);
+            throw original;
+        });
+        await assert.rejects(caso.excluir(midia.patrimonioId, midia.id, user), (error) => error === original);
+        assert.deepEqual(await fs.readFile(file.path), caso.bytes);
+        await ausente(staged);
+    });
+
+    test(`${caso.tipo}: limpeza definitiva aguarda confirmação do commit`, async (t) => {
+        const file = await arquivo(caso);
+        const midia = banco(t, caso, file);
+        let committed = false;
+        stub(t, prisma, "$transaction", async (callback) => {
+            const result = await callback(prisma);
+            committed = true;
+            return result;
+        });
+        const unlink = fs.unlink;
+        t.mock.method(fs, "unlink", async (target) => { assert.equal(committed, true); return unlink(target); });
+        assert.equal((await caso.excluir(midia.patrimonioId, midia.id, user)).arquivoRemovido, true);
+    });
+
+    test(`${caso.tipo}: permissão definitiva após lock impede cadastro e limpa upload`, async (t) => {
+        const file = await arquivo(caso);
+        stub(t, prisma.patrimonio, "findUnique", async () => ({ status: "RASCUNHO" }));
+        let locked = false;
+        const tx = {
+            $queryRaw: async (sql, id) => { assert.match(sql.join("?"), /FOR UPDATE/); assert.equal(id, "patrimonio"); locked = true; },
+            patrimonio: { findUnique: async () => { assert.equal(locked, true); return { status: "PUBLICADO" }; } },
+            [caso.model]: { create: async () => assert.fail("Não cadastrar após publicação") },
+        };
+        stub(t, prisma, "$transaction", async (callback) => callback(tx));
+        await assert.rejects(caso.criar("patrimonio", caso.metadados, file, { role: "EDITOR" }), { statusCode: 403 });
+        await ausente(file.path);
+    });
+
+    for (const status of ["RASCUNHO", "PUBLICADO", "ARQUIVADO"]) {
+        for (const role of ["EDITOR", "ADMIN"]) {
+            test(`${caso.tipo}: cadastro ${role} em ${status} verifica lock e usa mesma transação`, async (t) => {
+                const file = await arquivo(caso);
+                stub(t, prisma.patrimonio, "findUnique", async () => ({ status: "RASCUNHO" }));
+                let locked = false, authorized = false, unmarked = false;
+                const tx = {
+                    $queryRaw: async () => { locked = true; },
+                    patrimonio: { findUnique: async () => { assert.equal(locked, true); authorized = true; return { status }; } },
+                    [caso.model]: {
+                        updateMany: async ({ data }) => { assert.equal(authorized, true); assert.deepEqual(data, { principal: false }); unmarked = true; },
+                        create: async ({ data }) => {
+                            assert.equal(authorized, true);
+                            if (caso.tipo === "imagem") assert.equal(unmarked, true);
+                            return data;
+                        },
+                    },
+                };
+                stub(t, prisma, "$transaction", async (callback) => callback(tx));
+                const metadados = { ...caso.metadados, ...(caso.tipo === "imagem" ? { principal: true } : {}) };
+                if (role === "EDITOR" && status !== "RASCUNHO") {
+                    await assert.rejects(caso.criar("patrimonio", metadados, file, { role }), { statusCode: 403 });
+                    assert.equal(unmarked, false);
+                    await ausente(file.path);
+                } else {
+                    const result = await caso.criar("patrimonio", metadados, file, { role });
+                    assert.equal(result.patrimonioId, "patrimonio");
+                    assert.equal(result.url, `${URL_PREFIXO[caso.tipo]}/${path.basename(file.path)}`);
+                    assert.deepEqual(await fs.readFile(file.path), caso.bytes);
+                }
+            });
+
+            test(`${caso.tipo}: PATCH e DELETE ${role} em ${status} usam client da transação`, async (t) => {
+                const file = await arquivo(caso);
+                const midia = banco(t, caso, file);
+                const atualizar = caso.tipo === "imagem" ? service.updateImagem : service.updateDocumento;
+                const schema = caso.tipo === "imagem" ? schemas.updateImagemSchema : schemas.updateDocumentoSchema;
+                const stored = caso.tipo === "imagem"
+                    ? { titulo: "Original", credito: "Autor", fonte: "Fonte", textoAlternativo: "Alt" }
+                    : { titulo: "Original", descricao: "Descrição", fonte: "Fonte", dataDocumento: new Date("2024-02-29") };
+                let locked;
+                const tx = {
+                    $queryRaw: async () => { locked = true; },
+                    patrimonio: { findUnique: async () => { assert.equal(locked, true); return { status }; } },
+                    [caso.model]: {
+                        findFirst: async () => midia,
+                        update: async ({ data }) => { Object.assign(stored, data); return { ...stored }; },
+                        delete: async () => midia,
+                    },
+                };
+                stub(t, prisma, "$transaction", async (callback) => { locked = false; return callback(tx); });
+                if (role === "EDITOR" && status !== "RASCUNHO") {
+                    await assert.rejects(atualizar(midia.patrimonioId, midia.id, { fonte: null }, { role }), { statusCode: 403 });
+                    await assert.rejects(caso.excluir(midia.patrimonioId, midia.id, { role }), { statusCode: 403 });
+                    assert.deepEqual(await fs.readFile(file.path), caso.bytes);
+                } else {
+                    const first = await atualizar(midia.patrimonioId, midia.id, schema.parse({ fonte: null }), { role });
+                    assert.equal(first.fonte, null);
+                    assert.equal(first.titulo, "Original");
+                    const fields = caso.tipo === "imagem" ? ["titulo", "credito"] : ["descricao", "dataDocumento"];
+                    for (const field of fields) {
+                        assert.equal((await atualizar(midia.patrimonioId, midia.id, schema.parse({ [field]: null }), { role }))[field], null);
+                    }
+                    if (caso.tipo === "documento") {
+                        const result = await atualizar(midia.patrimonioId, midia.id, schema.parse({ dataDocumento: "2026-10-13" }), { role });
+                        assert.equal(result.dataDocumento.toISOString(), "2026-10-13T00:00:00.000Z");
+                    }
+                    assert.equal((await caso.excluir(midia.patrimonioId, midia.id, { role })).arquivoRemovido, true);
+                }
+            });
+        }
+    }
+
     test(`${caso.tipo}: metadados inválidos limpam upload e preservam erro de validação`, async () => {
         const file = await arquivo(caso);
         let original, forwarded;
@@ -111,6 +232,7 @@ for (const caso of casos) {
             stub(t, prisma.patrimonio, "findUnique", async () => ({ status: "RASCUNHO" }));
             stub(t, prisma[caso.model], "create", async () => { throw original; });
             stub(t, prisma, "$transaction", async (callback) => callback(prisma));
+            stub(t, prisma, "$queryRaw", async () => []);
             if (falharLimpeza) t.mock.method(fs, "unlink", async () => { throw erroDisco(); });
             await assert.rejects(caso.criar("patrimonio", caso.metadados, file, user), (error) => error === original);
             if (falharLimpeza) {
@@ -258,6 +380,23 @@ for (const caso of casos) {
         assert.deepEqual(await fs.readFile(file.path), caso.bytes);
     });
 }
+
+test("troca de imagem principal preserva desmarcação e edição na mesma transação", async (t) => {
+    stub(t, prisma.patrimonio, "findUnique", async () => ({ status: "RASCUNHO" }));
+    const calls = [];
+    const tx = {
+        $queryRaw: async () => calls.push("lock"),
+        patrimonio: { findUnique: async () => { calls.push("status"); return { status: "RASCUNHO" }; } },
+        patrimonioImagem: {
+            findFirst: async ({ where }) => { calls.push("midia"); assert.deepEqual(where, { id: "imagem", patrimonioId: "patrimonio" }); return { id: "imagem" }; },
+            updateMany: async ({ where }) => { calls.push("desmarcar"); assert.deepEqual(where, { patrimonioId: "patrimonio", principal: true, id: { not: "imagem" } }); },
+            update: async ({ data }) => { calls.push("editar"); return data; },
+        },
+    };
+    stub(t, prisma, "$transaction", async (callback) => callback(tx));
+    assert.deepEqual(await service.updateImagem("patrimonio", "imagem", { principal: true }, user), { principal: true });
+    assert.deepEqual(calls, ["lock", "status", "midia", "desmarcar", "editar"]);
+});
 
 test("proteções de caminho e quarentena privada nas rotas públicas", async (t) => {
     const file = await arquivo(casos[0]);

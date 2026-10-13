@@ -10,7 +10,11 @@ const booleano = z.union([z.boolean(), z.enum(["true", "false", "1", "0"])])
 const ordem = z.coerce.number().int("A ordem deve ser um número inteiro.")
     .min(0, "A ordem não pode ser negativa.");
 
-const dataDocumento = z.coerce.date("Informe uma data válida.");
+// Valida a data civil antes da coerção. null nunca chega ao coerce.date.
+const dataDocumento = z.union([
+    z.iso.date().pipe(z.coerce.date()),
+    z.date().transform((data) => new Date(data.toISOString().slice(0, 10))),
+]).nullable();
 
 
 // O strictObject recusa qualquer campo desconhecido, inclusive esses.
@@ -33,10 +37,17 @@ export const createDocumentoSchema = z.strictObject({
 
 const nonEmpty = (data) => Object.keys(data).length > 0;
 
-export const updateImagemSchema = createImagemSchema.partial()
+export const updateImagemSchema = createImagemSchema.extend({
+    titulo: createImagemSchema.shape.titulo.nullable(),
+    credito: createImagemSchema.shape.credito.nullable(),
+    fonte: createImagemSchema.shape.fonte.nullable(),
+}).partial()
     .refine(nonEmpty, "Informe algum campo para atualizar.");
 
-export const updateDocumentoSchema = createDocumentoSchema.partial()
+export const updateDocumentoSchema = createDocumentoSchema.extend({
+    descricao: createDocumentoSchema.shape.descricao.nullable(),
+    fonte: createDocumentoSchema.shape.fonte.nullable(),
+}).partial()
     .refine(nonEmpty, "Informe algum campo para atualizar.");
 
 // Rotas alinhadas assim os dois UUIDs da URL precisam ser validados.

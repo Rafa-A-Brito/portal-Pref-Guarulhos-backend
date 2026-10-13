@@ -261,7 +261,7 @@ schemas.DocumentoUpload = {
         tipo: string("Obrigatório.", { minLength: 1, maxLength: 100, example: "inventario" }),
         descricao: string("Descrição com trim.", { minLength: 1 }),
         fonte: string("Fonte com trim.", { minLength: 1, maxLength: 500 }),
-        dataDocumento: { type: "string", format: "date", description: "Data ISO (AAAA-MM-DD), convertida para Date.", example: "2026-01-02" },
+        dataDocumento: nullable({ type: "string", format: "date", description: "Data civil ISO (AAAA-MM-DD), sem conversão de fuso. Datas inválidas, texto vazio, números e booleanos são recusados.", example: "2026-01-02" }),
     },
 };
 
@@ -292,18 +292,20 @@ schemas.DocumentoMidiaResponse = { type: "object", required: ["success", "data"]
 
 schemas.ImagemPatch = (() => {
     const { arquivo, ...metadados } = schemas.ImagemUpload.properties;
+    for (const campo of ["titulo", "credito", "fonte"]) metadados[campo] = nullable(metadados[campo]);
     return {
         type: "object", additionalProperties: false, minProperties: 1,
-        description: "Atualização parcial de metadados. Não troca o arquivo: para isso cadastre o novo e remova o antigo.",
+        description: "Omissão preserva o valor; null limpa titulo, credito e fonte. Campos obrigatórios não aceitam null. A string null permanece texto. Não troca o arquivo: para isso cadastre o novo e remova o antigo.",
         properties: metadados,
     };
 })();
 
 schemas.DocumentoPatch = (() => {
     const { arquivo, ...metadados } = schemas.DocumentoUpload.properties;
+    for (const campo of ["descricao", "fonte"]) metadados[campo] = nullable(metadados[campo]);
     return {
         type: "object", additionalProperties: false, minProperties: 1,
-        description: "Atualização parcial de metadados. Não troca o arquivo: para isso cadastre o novo e remova o antigo.",
+        description: "Omissão preserva o valor; null limpa descricao, fonte e dataDocumento. titulo e tipo não aceitam null. A string null permanece texto e não é uma data válida. Não troca o arquivo: para isso cadastre o novo e remova o antigo.",
         properties: metadados,
     };
 })();

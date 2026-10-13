@@ -36,6 +36,12 @@ function exigirPermissao(status, user) {
     }
 }
 
+async function bloquearEAutorizar(transaction, patrimonioId, user) {
+    await transaction.$queryRaw`SELECT id FROM patrimonio WHERE id = ${patrimonioId}::uuid FOR UPDATE`;
+    const patrimonio = await exigirPatrimonio(transaction, patrimonioId);
+    exigirPermissao(patrimonio.status, user);
+}
+
 // Converte a URL pública em caminho de disco. URL externa devolve null, o que
 // garante que a API nunca apague arquivo que não gerencia.
 function caminhoDoArquivo(url) {
@@ -89,6 +95,7 @@ export async function createImagem(patrimonioId, metadados, arquivo, user) {
         await validarConteudo(arquivo, TIPOS_IMAGEM);
 
         return await prisma.$transaction(async (transaction) => {
+            await bloquearEAutorizar(transaction, patrimonioId, user);
             // Desmarcar a principal anterior e marcar a nova na mesma transação
             // evita o estado intermediário com duas principais.
             if (metadados.principal) {
@@ -114,6 +121,7 @@ export async function updateImagem(patrimonioId, imagemId, metadados, user) {
     exigirPermissao(patrimonio.status, user);
 
     return prisma.$transaction(async (transaction) => {
+        await bloquearEAutorizar(transaction, patrimonioId, user);
         // O filtro por patrimonioId garante que a mídia pertence ao patrimônio da URL.
         await exigirMidia(transaction, "patrimonioImagem", { id: imagemId, patrimonioId }, "Imagem não encontrada.", "IMAGEM_NOT_FOUND");
 
@@ -132,11 +140,7 @@ export async function deleteImagem(patrimonioId, imagemId, user) {
     const patrimonio = await exigirPatrimonio(prisma, patrimonioId);
     exigirPermissao(patrimonio.status, user);
 
-    const imagem = await exigirMidia(prisma, "patrimonioImagem", { id: imagemId, patrimonioId }, "Imagem não encontrada.", "IMAGEM_NOT_FOUND");
-
-    const arquivoRemovido = await excluirMidiaComQuarentena(imagem, "patrimonioImagem");
-
-    return { ...imagem, arquivoRemovido };
+    return excluirMidiaComQuarentena(patrimonioId, imagemId, user, "patrimonioImagem", "Imagem não encontrada.", "IMAGEM_NOT_FOUND");
 }
 
 // --- Documentos ----------------------------------------------------------
@@ -149,14 +153,16 @@ export async function createDocumento(patrimonioId, metadados, arquivo, user) {
         exigirPermissao(patrimonio.status, user);
         const mimeReal = await validarConteudo(arquivo, TIPOS_DOCUMENTO);
 
-        return await prisma.patrimonioDocumento.create({
-            data: {
-                ...metadados,
-                patrimonioId,
-                url: urlPublica("documento", arquivo),
-
-                mimeType: mimeReal,
-            },
+        return await prisma.$transaction(async (transaction) => {
+            await bloquearEAutorizar(transaction, patrimonioId, user);
+            return transaction.patrimonioDocumento.create({
+                data: {
+                    ...metadados,
+                    patrimonioId,
+                    url: urlPublica("documento", arquivo),
+                    mimeType: mimeReal,
+                },
+            });
         });
     } catch (error) {
         await limparUploadAposFalha(arquivo.path, { origem: "criar_documento", patrimonioId });
@@ -168,39 +174,41 @@ export async function updateDocumento(patrimonioId, documentoId, metadados, user
     const patrimonio = await exigirPatrimonio(prisma, patrimonioId);
     exigirPermissao(patrimonio.status, user);
 
-    await exigirMidia(prisma, "patrimonioDocumento", { id: documentoId, patrimonioId }, "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
-
-    return prisma.patrimonioDocumento.update({ where: { id: documentoId }, data: metadados });
+    return prisma.$transaction(async (transaction) => {
+        await bloquearEAutorizar(transaction, patrimonioId, user);
+        await exigirMidia(transaction, "patrimonioDocumento", { id: documentoId, patrimonioId }, "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
+        return transaction.patrimonioDocumento.update({ where: { id: documentoId }, data: metadados });
+    });
 }
 
 export async function deleteDocumento(patrimonioId, documentoId, user) {
     const patrimonio = await exigirPatrimonio(prisma, patrimonioId);
     exigirPermissao(patrimonio.status, user);
 
-    const documento = await exigirMidia(prisma, "patrimonioDocumento", { id: documentoId, patrimonioId }, "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
-
-    const arquivoRemovido = await excluirMidiaComQuarentena(documento, "patrimonioDocumento");
-
-    return { ...documento, arquivoRemovido };
+    return excluirMidiaComQuarentena(patrimonioId, documentoId, user, "patrimonioDocumento", "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
 }
 
-// Disco e banco não são atômicos. Falhas posteriores ao DELETE exigem
-// recuperação pelos caminhos/IDs registrados, pois o registro já não existe.
-async function excluirMidiaComQuarentena(midia, model) {
-    const caminho = caminhoDoArquivo(midia.url);
-    const contexto = { model, midiaId: midia.id, patrimonioId: midia.patrimonioId, url: midia.url, caminhoOriginal: caminho };
-    let arquivo;
+// Disco e banco não são atômicos. Restaura inclusive após falhas no commit.
+// Limpeza definitiva da quarentena ocorre somente após confirmar a transação.
+async function excluirMidiaComQuarentena(patrimonioId, midiaId, user, model, mensagem, codigo) {
+    let arquivo, contexto, midia;
     try {
-        arquivo = await moverParaQuarentena(caminho);
-    } catch (error) {
-        registrarPendenciaArquivo("mover_quarentena", { ...contexto, registroExcluido: false }, error);
-        const erro = new BaseError("Não foi possível preparar a exclusão do arquivo da mídia.", 500);
-        erro.code = "ARQUIVO_NAO_REMOVIDO";
-        throw erro;
-    }
-
-    try {
-        await prisma[model].delete({ where: { id: midia.id } });
+        midia = await prisma.$transaction(async (transaction) => {
+            await bloquearEAutorizar(transaction, patrimonioId, user);
+            const atual = await exigirMidia(transaction, model, { id: midiaId, patrimonioId }, mensagem, codigo);
+            const caminho = caminhoDoArquivo(atual.url);
+            contexto = { model, midiaId, patrimonioId, url: atual.url, caminhoOriginal: caminho };
+            try {
+                arquivo = await moverParaQuarentena(caminho);
+            } catch (error) {
+                registrarPendenciaArquivo("mover_quarentena", { ...contexto, registroExcluido: false }, error);
+                const erro = new BaseError("Não foi possível preparar a exclusão do arquivo da mídia.", 500);
+                erro.code = "ARQUIVO_NAO_REMOVIDO";
+                throw erro;
+            }
+            await transaction[model].delete({ where: { id: midiaId } });
+            return atual;
+        });
     } catch (error) {
         if (arquivo) {
             try {
@@ -217,9 +225,9 @@ async function excluirMidiaComQuarentena(midia, model) {
             await apagarArquivoGerenciado(arquivo.quarentena);
         } catch (error) {
             registrarPendenciaArquivo("limpar_quarentena", { ...contexto, caminhoQuarentena: arquivo.quarentena, registroExcluido: true }, error);
-            return false;
+            return { ...midia, arquivoRemovido: false };
         }
     }
     // Arquivo ausente ou URL externa não impede a exclusão do registro.
-    return true;
+    return { ...midia, arquivoRemovido: true };
 }

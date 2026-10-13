@@ -3,6 +3,22 @@ import { test } from "node:test";
 import SwaggerParser from "@apidevtools/swagger-parser";
 import openapi from "../src/docs/openapi.js";
 
+test("Swagger documenta limpeza nullable de mídia sem tornar campos obrigatórios nullable", () => {
+    for (const [name, nullableFields, requiredFields] of [
+        ["ImagemPatch", ["titulo", "credito", "fonte"], ["textoAlternativo"]],
+        ["DocumentoPatch", ["descricao", "fonte", "dataDocumento"], ["titulo", "tipo"]],
+    ]) {
+        const schema = openapi.components.schemas[name];
+        assert.match(schema.description, /Omissão preserva/);
+        assert.match(schema.description, /null limpa/);
+        for (const campo of nullableFields) assert.equal(schema.properties[campo].nullable, true);
+        for (const campo of requiredFields) assert.notEqual(schema.properties[campo].nullable, true);
+    }
+    assert.equal(openapi.components.schemas.DocumentoPatch.properties.dataDocumento.format, "date");
+    assert.notEqual(openapi.components.schemas.ImagemUpload.properties.titulo.nullable, true);
+    assert.notEqual(openapi.components.schemas.DocumentoUpload.properties.descricao.nullable, true);
+});
+
 test("Swagger documenta região opcional nullable com códigos e rótulos em todos os contratos", async () => {
     const { RegiaoPatrimonio } = await import("@prisma/client");
     for (const name of ["LocalizacaoRequest", "LocalizacaoPatch", "Localizacao"]) {
