@@ -40,8 +40,11 @@ test("especificação OpenAPI válida, com referências, rotas e autenticação 
 
     for (const [path, methods] of Object.entries(openapi.paths)) {
         for (const operation of Object.values(methods)) {
+<<<<<<< HEAD
             // A rota de arquivos é pública para mídias de patrimônios publicados
             // e usa autenticação opcional para as demais.
+=======
+>>>>>>> 8d9ed379cf2a1845294ead092f79225af2182b2e
             assert.equal(Boolean(operation.security), path === "/api/admins" || path === "/api/auth/senha" || path.startsWith("/api/admin/"));
         }
     }

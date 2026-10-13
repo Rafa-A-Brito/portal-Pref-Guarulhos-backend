@@ -2,12 +2,19 @@ import { Router } from "express";
 import authRoutes from "./authRoute.js";
 import adminRoutes from "./adminRoute.js";
 import adminPatrimonioRoutes from "./adminPatrimonioRoute.js";
+<<<<<<< HEAD
+=======
+import dashboardRoutes from "./dashboardRoute.js";
+>>>>>>> 8d9ed379cf2a1845294ead092f79225af2182b2e
 import patrimonioRoutes from "./patrimonioRoute.js";
 import { servirArquivo } from "../controllers/midiaPublicaController.js";
 import authenticateOpcional from "../middlewares/authenticateOpcional.js";
 import { validateParams } from "../middlewares/validate.js";
 import { arquivoParamsSchema } from "../schemas/midiaSchema.js";
+<<<<<<< HEAD
 import dashboardRoutes from "./dashboardRoute.js";
+=======
+>>>>>>> 8d9ed379cf2a1845294ead092f79225af2182b2e
 
 const router = Router();
 
