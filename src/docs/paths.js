@@ -179,6 +179,7 @@ const arquivoPublicoResponses = {
 };
 
 const listaMidiaDescricao = "Identificadores são UUIDs em texto. O patrimônio é conferido antes do processamento e a mídia precisa pertencer a ele. EDITOR atua em rascunhos; ADMIN em qualquer status. Metadados textuais recebem trim; ordem, principal e datas são convertidos de texto conforme o schema.";
+const exclusaoMidiaDescricao = "Remove o registro e o arquivo gerenciado sem afetar as demais mídias. URLs externas não são movidas nem apagadas; arquivo já ausente é permitido. Arquivos locais passam por quarentena privada antes do DELETE no banco e são apagados após sucesso. Se o banco falhar, tenta restaurar o arquivo e preserva o erro original. Não há atomicidade entre disco e banco. Falhas de restauração ou limpeza geram log com IDs e caminhos para recuperação operacional. Se apenas a limpeza final falhar, o registro já foi excluído: retorna sucesso com arquivoRemovido=false; a pendência deve ser resolvida na quarentena, sem repetir o DELETE.";
 
 paths["/api/admin/patrimonios/{id}/imagens"] = {
     post: {
@@ -210,7 +211,7 @@ paths["/api/admin/patrimonios/{id}/imagens/{imagemId}"] = {
     },
     delete: {
         tags: ["Mídias administrativas"], summary: "Remove uma imagem do patrimônio",
-        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. URLs externas nunca são apagadas. O arquivo é apagado antes do registro: se a remoção física falhar, a operação retorna erro e o registro é preservado, de modo que repetir a requisição tenta a limpeza novamente.`,
+        description: `${listaMidiaDescricao} ${exclusaoMidiaDescricao}`,
         security: bearerAuth, parameters: [idParameter, imagemPathParameter],
         responses: {
             200: response("Imagem removida.", "ImagemMidiaResponse"),
@@ -251,7 +252,7 @@ paths["/api/admin/patrimonios/{id}/documentos/{documentoId}"] = {
     },
     delete: {
         tags: ["Mídias administrativas"], summary: "Remove um documento do patrimônio",
-        description: `${listaMidiaDescricao} Remove o registro e o arquivo gerenciado pela API, sem afetar o patrimônio nem as demais mídias. O arquivo é apagado antes do registro: se a remoção física falhar, a operação retorna erro e o registro é preservado, de modo que repetir a requisição tenta a limpeza novamente.`,
+        description: `${listaMidiaDescricao} ${exclusaoMidiaDescricao}`,
         security: bearerAuth, parameters: [idParameter, documentoPathParameter],
         responses: {
             200: response("Documento removido.", "DocumentoMidiaResponse"),

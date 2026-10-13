@@ -5,7 +5,8 @@ import BadRequestError from "../errors/BadRequestError.js";
 import BaseError from "../errors/BaseError.js";
 import ForbiddenError from "../errors/ForbiddenError.js";
 import NotFoundError from "../errors/NotFoundError.js";
-import { TIPOS_DOCUMENTO, TIPOS_IMAGEM, apagarArquivoGerenciado, detectarMimeReal, lerCabecalho } from "../utils/arquivos.js";
+import { TIPOS_DOCUMENTO, TIPOS_IMAGEM, apagarArquivoGerenciado, detectarMimeReal, lerCabecalho,
+    limparUploadAposFalha, moverParaQuarentena, restaurarDaQuarentena, registrarPendenciaArquivo } from "../utils/arquivos.js";
 
 const SELECT_MIDIA = {
     id: true,
@@ -40,7 +41,9 @@ function exigirPermissao(status, user) {
 function caminhoDoArquivo(url) {
     for (const [tipo, prefixo] of Object.entries(URL_PREFIXO)) {
         if (url.startsWith(`${prefixo}/`)) {
-            return path.join(PASTAS[tipo], path.basename(url));
+            const nome = url.slice(prefixo.length + 1);
+            if (!nome || nome === "." || nome === ".." || nome.includes("/") || nome.includes("\\")) return null;
+            return path.join(PASTAS[tipo], nome);
         }
     }
     return null;
@@ -101,7 +104,7 @@ export async function createImagem(patrimonioId, metadados, arquivo, user) {
         });
     } catch (error) {
         // Se a gravação falhar, o arquivo recém-criado ficaria órfão no disco.
-        await apagarArquivoGerenciado(arquivo.path).catch(() => {});
+        await limparUploadAposFalha(arquivo.path, { origem: "criar_imagem", patrimonioId });
         throw error;
     }
 }
@@ -131,12 +134,7 @@ export async function deleteImagem(patrimonioId, imagemId, user) {
 
     const imagem = await exigirMidia(prisma, "patrimonioImagem", { id: imagemId, patrimonioId }, "Imagem não encontrada.", "IMAGEM_NOT_FOUND");
 
-    // O arquivo é apagado antes do registro. Se a remoção física falhar, o
-    // registro permanece no banco e repetir o DELETE realmente tenta de novo
-    // (o aviso "Tente novamente" passa a ser verdadeiro).
-    const arquivoRemovido = await apagarArquivo(imagem, "imagem");
-
-    await prisma.patrimonioImagem.delete({ where: { id: imagemId } });
+    const arquivoRemovido = await excluirMidiaComQuarentena(imagem, "patrimonioImagem");
 
     return { ...imagem, arquivoRemovido };
 }
@@ -161,7 +159,7 @@ export async function createDocumento(patrimonioId, metadados, arquivo, user) {
             },
         });
     } catch (error) {
-        await apagarArquivoGerenciado(arquivo.path).catch(() => {});
+        await limparUploadAposFalha(arquivo.path, { origem: "criar_documento", patrimonioId });
         throw error;
     }
 }
@@ -181,28 +179,47 @@ export async function deleteDocumento(patrimonioId, documentoId, user) {
 
     const documento = await exigirMidia(prisma, "patrimonioDocumento", { id: documentoId, patrimonioId }, "Documento não encontrado.", "DOCUMENTO_NOT_FOUND");
 
-    // Mesma ordem do delete de imagem: limpa o disco antes de remover o registro.
-    const arquivoRemovido = await apagarArquivo(documento, "documento");
-
-    await prisma.patrimonioDocumento.delete({ where: { id: documentoId } });
+    const arquivoRemovido = await excluirMidiaComQuarentena(documento, "patrimonioDocumento");
 
     return { ...documento, arquivoRemovido };
 }
 
-// Apaga o arquivo gerenciado antes de remover o registro. Se a remoção física
-// falhar, o erro sobe e o registro continua no banco, de modo que repetir o
-// DELETE vai encontrar a mídia novamente para apagar. ENOENT =
-// sucesso, pois o objetivo (não deixar arquivo órfão) já está satisfeito.
-async function apagarArquivo(midia, rotulo) {
+// Disco e banco não são atômicos. Falhas posteriores ao DELETE exigem
+// recuperação pelos caminhos/IDs registrados, pois o registro já não existe.
+async function excluirMidiaComQuarentena(midia, model) {
     const caminho = caminhoDoArquivo(midia.url);
-
+    const contexto = { model, midiaId: midia.id, patrimonioId: midia.patrimonioId, url: midia.url, caminhoOriginal: caminho };
+    let arquivo;
     try {
-        await apagarArquivoGerenciado(caminho);
-        return true;
+        arquivo = await moverParaQuarentena(caminho);
     } catch (error) {
-        console.error(`Falha ao remover o arquivo da mídia (${rotulo}).`, { caminho, code: error.code });
-        const erro = new BaseError("Não foi possível apagar o arquivo da mídia. Tente novamente.", 500);
+        registrarPendenciaArquivo("mover_quarentena", { ...contexto, registroExcluido: false }, error);
+        const erro = new BaseError("Não foi possível preparar a exclusão do arquivo da mídia.", 500);
         erro.code = "ARQUIVO_NAO_REMOVIDO";
         throw erro;
     }
+
+    try {
+        await prisma[model].delete({ where: { id: midia.id } });
+    } catch (error) {
+        if (arquivo) {
+            try {
+                await restaurarDaQuarentena(arquivo);
+            } catch (restauracaoError) {
+                registrarPendenciaArquivo("restaurar_quarentena", { ...contexto, caminhoQuarentena: arquivo.quarentena, registroExcluido: false }, restauracaoError);
+            }
+        }
+        throw error;
+    }
+
+    if (arquivo) {
+        try {
+            await apagarArquivoGerenciado(arquivo.quarentena);
+        } catch (error) {
+            registrarPendenciaArquivo("limpar_quarentena", { ...contexto, caminhoQuarentena: arquivo.quarentena, registroExcluido: true }, error);
+            return false;
+        }
+    }
+    // Arquivo ausente ou URL externa não impede a exclusão do registro.
+    return true;
 }

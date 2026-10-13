@@ -1,4 +1,4 @@
-import { apagarArquivoGerenciado } from "../utils/arquivos.js";
+import { limparUploadAposFalha } from "../utils/arquivos.js";
 
 export default function validate(schema) {
     return (req, _res, next) => {
@@ -15,7 +15,7 @@ export function validateComLimpezaDeArquivo(schema) {
             req.body = schema.parse(req.body);
             next();
         } catch (error) {
-            await apagarArquivoGerenciado(req.file?.path).catch(() => {});
+            await limparUploadAposFalha(req.file?.path, { origem: "validacao_metadados", patrimonioId: req.validatedParams?.id });
             next(error);
         }
     };

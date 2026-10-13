@@ -1,5 +1,8 @@
 # Administração de patrimônios
 
+Para limpeza de uploads, exclusão com quarentena privada e recuperação de
+pendências de arquivos, consulte [mídias e arquivos](midias-arquivos.md).
+
 Com o banco e as variáveis de ambiente configurados, execute `npm run dev`.
 Abra `http://localhost:3333/api/docs` (ou a porta configurada em `PORT`).
 O contrato OpenAPI também está disponível em `/api/docs.json` e pode ser importado no Postman.
