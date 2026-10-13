@@ -12,6 +12,8 @@
 
 Aplicação web interativa para o mapeamento, consulta e preservação da memória dos patrimônios históricos da cidade de Guarulhos. A plataforma permite a navegação por rotas culturais, visualização em mapa interativo via Google Maps, análise de dados estatísticos e mecanismos avançados de pesquisa e filtragem.
 
+Documentação da [classificação territorial dos patrimônios](docs/classificacao-territorial.md): códigos, rótulos, contratos e aplicação da migration.
+
 ---
 
 ## 📖 Sobre o Projeto
@@ -153,9 +155,10 @@ Para criar/aplicar as migrations durante o desenvolvimento:
 npx prisma migrate dev
 ```
 
-Para popular o ambiente local com os patrimônios iniciais:
+Para importar os 34 registros da pesquisa como RASCUNHO, configure PATRIMONIOS_PUBLIC_BASE_URL, aplique as migrations e revise o dry-run. Consulte [a política de importação, reconciliação e imagens](docs/populacao-patrimonios.md). A seed antiga está desativada.
 
 ```bash
+npm run prisma:seed -- --dry-run
 npm run prisma:seed
 ```
 
@@ -193,7 +196,7 @@ GET /api/patrimonios/:slug
 ```
 
 A listagem aceita os parâmetros opcionais `busca`, `categoria`, `situacao`,
-`bairro`, `pagina` e `limite`. Apenas patrimônios publicados são retornados.
+`bairro`, `pagina` e `limite`. Apenas patrimônios publicados são retornados, em ordem editorial (null por último). Categoria aceita nome ou slug; busca inclui título/texto das seções. O detalhe retorna seções, fatos e ligações ordenadas, além de número/ordem de exibição. A carga mantém RASCUNHO e não publica os registros.
 
 Exemplo:
 

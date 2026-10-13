@@ -24,6 +24,9 @@ O modelo físico define como o modelo lógico é implementado no PostgreSQL. Ele
 | `users` | `User` | Todos os campos do DER; `passwordHash`, `isActive`, `createdAt` e `updatedAt` mantêm o contrato camelCase do backend e usam `@map`. |
 | `categoria` | `Categoria` | Inclui o `slug` documentado, único. Preserva `created_at` e `updated_at` como extensão técnica. |
 | `patrimonio` | `Patrimonio` | Inclui `descricao_resumida` e `importancia_cultural`. O campo Prisma `nome` é mapeado para o `name` do DER; `publicadoEm` é mapeado para `published_at`. |
+| `patrimonio_secoes` | `PatrimonioSecao` | Ícone, título, texto e posição editorial por patrimônio. |
+| `patrimonio_fatos` | `PatrimonioFato` | Rótulo/valor textuais e posição editorial por patrimônio. |
+| `patrimonio_ligacoes` | `PatrimonioLigacao` | Associação dirigida entre dois patrimônios, texto editorial e posição. |
 | `local` | `Localizacao` | O nome Prisma existente foi preservado; a tabela física é `local`. Mantém a cardinalidade 1:1 por `UNIQUE (patrimonio_id)`. |
 | `patrimonio_imagens` | `PatrimonioImagem` | Inclui `credito` e `fonte`. `textoAlternativo` e `principal` são mapeados para `alt` e `is_capa`. |
 | `patrimonio_documentos` | `PatrimonioDocumento` | Inclui `tipo`, `fonte` e `data_documento`; preserva `mime_type` e `created_at`. |
@@ -55,6 +58,7 @@ Não foi removido nenhum enum, campo ou relacionamento preexistente. Os campos `
 - Instantes técnicos usam `TIMESTAMPTZ(3)`, armazenando um instante independente do fuso com precisão de milissegundos.
 - Chaves, relações obrigatórias, nomes essenciais, URLs, slugs, status e campos de autenticação são `NOT NULL`.
 - História, importância cultural, metadados de fonte, data do documento, coordenadas, complemento de endereço, atualização por usuário e snapshots de auditoria são opcionais porque podem ser desconhecidos ou inaplicáveis.
+- `descricao` é um texto legado opcional; a pesquisa completa fica nas seções. `numero_exibicao` e `ordem_exibicao` são opcionais durante a transição de registros remanescentes.
 - `descricao_resumida` é obrigatória por fazer parte do contrato de apresentação esperado pela interface. `tipo` do documento também é obrigatório para permitir classificação consistente.
 - Defaults principais: UUID automático; `EDITOR`; usuário ativo; `RASCUNHO`; `NAO_INFORMADO`; `is_capa = false`; `ordem = 0` para imagens; cidade `Guarulhos`; UF `SP`; timestamps de criação e atualização com o instante atual.
 - O enum de situação também inclui `DEMOLIDO`, permitindo manter na consulta pública bens perdidos como registros históricos sem classificá-los como situação desconhecida.
@@ -71,6 +75,9 @@ São únicos:
 - `local.patrimonio_id`, que implementa o lado 1:1;
 - `(rota_id, patrimonio_id)`, impedindo repetição do mesmo patrimônio em uma rota;
 - `(rota_id, ordem)`, impedindo duas posições iguais na mesma rota;
+- `patrimonio.numero_exibicao` e `patrimonio.ordem_exibicao` quando preenchidos;
+- `(patrimonio_id, ordem)` em seções e fatos;
+- par origem/destino e `(patrimonio_origem_id, ordem)` em ligações;
 - `patrimonio_imagens.patrimonio_id` apenas quando `is_capa = true`, por índice único parcial, permitindo no máximo uma capa por patrimônio.
 
 Checks adicionados diretamente à migration, pois não são expressos de forma portável no schema Prisma usado pelo projeto:
@@ -79,6 +86,7 @@ Checks adicionados diretamente à migration, pois não são expressos de forma p
 - `rota_patrimonio.ordem >= 0`;
 - `local.latitude` nula ou entre `-90` e `90`;
 - `local.longitude` nula ou entre `-180` e `180`.
+- número de exibição positivo, ordens editoriais não negativas e origem/destino diferentes nas ligações.
 
 Há índices para status, categoria combinada com status, todas as FKs que não são cobertas por uma chave única iniciada pela mesma coluna, consulta de auditoria por entidade/data e ordenação de imagens. Índices `UNIQUE` de e-mail e slugs também servem às respectivas buscas. O índice composto `(categoria_id, status)` atende buscas apenas por categoria por causa da ordem de suas colunas; existe um índice separado para buscas apenas por status.
 
@@ -89,6 +97,7 @@ Há índices para status, categoria combinada com status, todas as FKs que não 
 | `categoria` → `patrimonio` | `RESTRICT` | Uma categoria referenciada não pode ser excluída. O patrimônio deve ser recategorizado ou arquivado antes. |
 | `users` → `patrimonio.created_by` / `updated_by` | `RESTRICT` | Preserva a autoria editorial e impede excluir usuários ainda referenciados. Desativar o usuário por `is_active = false` é o fluxo preferido. |
 | `patrimonio` → `local`, imagens e documentos | `CASCADE` | Esses filhos não possuem significado útil sem o patrimônio. O status `ARQUIVADO` deve ser preferido à exclusão física; caso a exclusão física seja explicitamente executada, não ficam órfãos. |
+| `patrimonio` → seções, fatos e ligações de origem/destino | `CASCADE` | Remove os dependentes editoriais e as ligações recebidas quando um patrimônio é excluído. |
 | `rota` / `patrimonio` → `rota_patrimonio` | `CASCADE` | Remove somente a associação dependente quando um dos pais é removido. Não exclui o patrimônio ao excluir uma rota, nem a rota ao excluir um patrimônio. |
 | `users` → `audit_log` | `SET NULL` | A exclusão do usuário mantém o histórico; `user_id` torna-se nulo. Logs de ações do sistema já podem nascer sem usuário. |
 
@@ -98,7 +107,7 @@ Há índices para status, categoria combinada com status, todas as FKs que não 
 
 `audit_log` está estruturalmente pronta para receber eventos. `entity_id` é um UUID genérico e não possui FK para outras entidades; a combinação `entity` + `entity_id` identifica logicamente o alvo. `old_values` e `new_values` guardam snapshots opcionais em `JSONB`.
 
-A migration não cria triggers e o backend ainda não grava eventos. Portanto, a existência da tabela **não significa auditoria automática**. A equipe ainda deve definir quais ações serão registradas, o formato dos snapshots, a camada da aplicação responsável e a política de retenção. Triggers podem ser avaliadas posteriormente, mas não fazem parte desta entrega.
+A migration não cria triggers. A seed da pesquisa grava explicitamente snapshots de importação/reconciliação; as demais operações do backend não têm auditoria automática. Portanto, a existência da tabela **não significa auditoria automática**. A equipe ainda deve definir quais ações serão registradas, o formato dos snapshots, a camada da aplicação responsável e a política de retenção. Triggers podem ser avaliadas posteriormente, mas não fazem parte desta entrega.
 
 ## Configuração e migrations
 
@@ -136,7 +145,7 @@ A migration inicial está em `prisma/migrations/20260929230000_initial_schema/mi
 
 A migration incremental `20260930120000_add_demolido_situacao` adiciona o valor `DEMOLIDO` ao enum físico `situacao_patrimonio`.
 
-Os testes reproduzíveis estão em `prisma/tests/integrity.sql`. Eles executam dentro de uma transação e terminam com `ROLLBACK`, portanto não deixam os registros de teste no banco. Execute-os somente em uma instância de desenvolvimento com a migration já aplicada:
+Os testes reproduzíveis estão em `prisma/tests/integrity.sql`. Eles executam dentro de uma transação e terminam com `ROLLBACK`, portanto não deixam os registros de teste no banco. O script pressupõe um banco vazio e exclusivo de teste, com migrations aplicadas. Prefira `npm run test:postgres`, que cria esse ambiente isolado; para execução manual nesse ambiente:
 
 ```powershell
 psql $env:DATABASE_URL -f prisma/tests/integrity.sql
@@ -146,12 +155,17 @@ O teste cobre criação das tabelas, PKs, FKs, nomes físicos, unicidade de e-ma
 
 ## Integração futura com o frontend
 
-O frontend atual usa dados simulados com `id`, `nome`, `categoria`, `bairro`, `resumo`, `imagemPrincipal` e `localizacao.{lat,lng}`. Futuros endpoints podem projetar esses valores a partir de:
+O mock do frontend utiliza `id`, `nome`, `categoria`, `bairro`, `resumo`, `imagemPrincipal`, `localizacao.{lat,lng}` e arrays editoriais. A API PostgreSQL já oferece os dados, mas a adaptação do frontend permanece uma tarefa futura. O mapeamento é:
 
-- `patrimonio.id` e `patrimonio.name` (`nome` no Prisma);
-- `categoria.slug` ou `categoria.nome`;
+- UUID em `patrimonio.id`, número visível em `numero_exibicao`, ordem em `ordem_exibicao` e nome em `patrimonio.name` (`nome` no Prisma);
+- categoria em objeto, utilizando `categoria.slug` para os filtros existentes;
 - `local.bairro`, `local.latitude` e `local.longitude`;
 - `patrimonio.descricao_resumida`;
 - a imagem com `is_capa = true`.
+- `patrimonio_secoes`, `patrimonio_fatos` e `patrimonio_ligacoes`, com ordens explícitas e consulta de detalhes por slug.
 
-Essa transformação pertence à camada de serviço/API; os nomes físicos do banco não devem ser expostos diretamente como contrato HTTP. Os mocks do frontend são apenas referência estrutural e não representam informações históricas oficiais.
+Os nomes físicos do banco não são expostos como contrato HTTP. A seed preserva o conteúdo da pesquisa existente no mock; o frontend precisará adaptar envelope, paginação, campos, navegação por slug e coordenadas. Consulte o contrato completo no documento de população abaixo.
+
+## Pesquisa patrimonial e transição incremental
+
+A migration `20261005230000_add_pesquisa_patrimonios` acrescenta número/ordem editorial nullable e únicos, as tabelas `patrimonio_secoes`, `patrimonio_fatos` e `patrimonio_ligacoes`, seus checks, índices e cascades. Torna apenas `patrimonio.descricao` nullable. Todos os textos legados, UUIDs e relacionamentos anteriores são preservados. Consulte [populacao-patrimonios.md](populacao-patrimonios.md) para o contrato vigente, a única seed ativa, reconciliação, imagens e condições para futuras remoções de colunas.
